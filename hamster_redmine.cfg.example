@@ -1,0 +1,4 @@
+[redmine]
+url = http://example.org/redmine
+user = me@example.org
+pass = secret

@@ -12,14 +12,10 @@ class Issue(ActiveResource):
     _user = None
     _password = None
 
-# tt1 = TimeEntry(dict(issue_id=4984, spent_on='2012-06-18', hours=.75, activity_id=9, comments='re-ran buildout'))
-# tt1.save()
-
 ticket_pattern = re.compile('#([0-9]*)')
 def get_timeinfo(date=datetime.now(), baseurl=''):
     sto = Storage()
     facts = sto.get_facts(date)
-    #facts = sto.get_facts(datetime(2012,3,1))
     bookings = []
     for fact in facts:
         #delta = (fact.end_time or datetime.now()) - fact.start_time
@@ -158,5 +154,4 @@ if __name__ == "__main__":
     new_bookings = menu()
 
     if new_bookings:
-        #import pdb; pdb.set_trace()
         book_time(TimeEntry, new_bookings)

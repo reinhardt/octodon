@@ -91,6 +91,11 @@ class BookingsMenu(object):
     def edit(self, entry=None):
         if entry is None:
             entry = int(raw_input('Edit Entry No.? '))
+        while entry < 0 - len(self.bookings) or entry >= len(self.bookings):
+            print('No entry with index %d!' % entry)
+            entry = int(raw_input('Edit Entry No.? '))
+            if not entry:
+                return
         print('description: ' + self.bookings[entry]['description'])
         for key in bookings[entry]:
             if key == 'description':

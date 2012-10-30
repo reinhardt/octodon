@@ -131,13 +131,13 @@ class BookingsMenu(object):
 
 if __name__ == "__main__":
     cfgfile = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-            'hamster_redmine.cfg')
+            'octodon.cfg')
     config = SafeConfigParser()
     if not os.path.exists(cfgfile):
-        if not os.path.exists('hamster_redmine.cfg'):
+        if not os.path.exists('octodon.cfg'):
             print('No config file found! Please create %s' % cfgfile)
             sys.exit()
-        config.read('hamster_redmine.cfg')
+        config.read('octodon.cfg')
     config.read(cfgfile)
 
     class TimeEntry(ActiveResource):

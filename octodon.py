@@ -3,8 +3,9 @@ from datetime import datetime, date
 from hamster.client import Storage
 from ConfigParser import SafeConfigParser
 import argparse
+from tempfile import NamedTemporaryFile
 import re
-import sys,os
+import sys, os, math
 from pyactiveresource.activeresource import ActiveResource
 
 class Issue(ActiveResource):
@@ -34,6 +35,27 @@ def get_timeinfo(date=datetime.now(), baseurl=''):
                          'description': fact.activity,
                          'comments': ''})
     return bookings
+
+def format_time(time):
+    hours = math.floor(time)
+    mins = (time - hours) * 60
+    return '%2d:%02d' % (hours, mins)
+
+def pad(string, length):
+    return string + ' ' * (length - len(string))
+
+def write_to_file(bookings):
+    tmpfile = NamedTemporaryFile(mode='w')
+    tmpfile.write('#+BEGIN: clocktable :maxlevel 2 :scope file\n')
+    tmpfile.write('Clock summary at [' + 
+            datetime.now().strftime('%Y-%m-%d %a %H:%M') + ']\n')
+    tmpfile.write('\n')
+    max_desc_len = max([len(b['description']) for b in bookings])
+    for entry in bookings:
+        tmpfile.write('|------+-%s-+-------|\n' % ('-' * max_desc_len))
+        tmpfile.write('| %04d | %s | %s |\n' % (entry['issue_id'],
+                pad(entry['description'], max_desc_len), format_time(entry['hours'])))
+    return tmpfile
 
 def book_time(TimeEntry, bookings):
     for entry in bookings:

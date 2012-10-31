@@ -37,7 +37,7 @@ def get_timeinfo(date=datetime.now(), baseurl=''):
                          'comments': ''})
     return bookings
 
-def format_time(time):
+def format_spent_time(time):
     hours = math.floor(time)
     mins = (time - hours) * 60
     return '%2d:%02d' % (hours, mins)
@@ -55,7 +55,7 @@ def write_to_file(bookingsi, spent_on):
     for entry in bookings:
         tmpfile.write('|------+-%s-+-------|\n' % ('-' * max_desc_len))
         tmpfile.write('| %04d | %s | %s |\n' % (entry['issue_id'],
-                pad(entry['description'], max_desc_len), format_time(entry['hours'])))
+                pad(entry['description'], max_desc_len), format_spent_time(entry['hours'])))
     tmpfile.write('|------+-%s-+-------|\n' % ('-' * max_desc_len))
     tmpfile.flush()
     return tmpfile
@@ -82,13 +82,14 @@ def read_from_file(filename):
                          'spent_on': spentdate.date(),
                          'hours': spenthours, 
                          'comments': columns[1]})
-    BookingsMenu(bookings).print_all()
+    return bookings
 
 
 def book_time(TimeEntry, bookings):
     for entry in bookings:
         rm_entry = entry.copy()
-        del rm_entry['description']
+        if 'description' in rm_entry:
+            del rm_entry['description']
         redmine_entry = TimeEntry(rm_entry)
         redmine_entry.save()
 
@@ -218,6 +219,7 @@ if __name__ == "__main__":
     new_bookings = read_from_file(tempfile.name)
     tempfile.close()
 
+    BookingsMenu(new_bookings).print_all()
     book_now = raw_input('Book now? [y/N] ')
 
     if new_bookings and book_now.lower() == 'y':

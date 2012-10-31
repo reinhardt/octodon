@@ -1,3 +1,6 @@
+[main]
+editor = vim
+
 [redmine]
 url = http://example.org/redmine
 user = me@example.org

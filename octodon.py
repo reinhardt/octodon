@@ -3,6 +3,7 @@ from datetime import datetime, date
 from hamster.client import Storage
 from ConfigParser import SafeConfigParser
 import argparse
+import subprocess
 from tempfile import NamedTemporaryFile
 import re
 import sys, os, math
@@ -44,18 +45,45 @@ def format_time(time):
 def pad(string, length):
     return string + ' ' * (length - len(string))
 
-def write_to_file(bookings):
+def write_to_file(bookingsi, spent_on):
     tmpfile = NamedTemporaryFile(mode='w')
     tmpfile.write('#+BEGIN: clocktable :maxlevel 2 :scope file\n')
     tmpfile.write('Clock summary at [' + 
-            datetime.now().strftime('%Y-%m-%d %a %H:%M') + ']\n')
+            spent_on.strftime('%Y-%m-%d %a %H:%M') + ']\n')
     tmpfile.write('\n')
     max_desc_len = max([len(b['description']) for b in bookings])
     for entry in bookings:
         tmpfile.write('|------+-%s-+-------|\n' % ('-' * max_desc_len))
         tmpfile.write('| %04d | %s | %s |\n' % (entry['issue_id'],
                 pad(entry['description'], max_desc_len), format_time(entry['hours'])))
+    tmpfile.write('|------+-%s-+-------|\n' % ('-' * max_desc_len))
+    tmpfile.flush()
     return tmpfile
+
+def read_from_file(filename):
+    tmpfile = open(filename, 'r')
+    data = tmpfile.readlines()
+    tmpfile.close()
+    bookings = []
+    spentdate = None
+    for line in data:
+        if line.startswith('Clock summary at ['):
+            splitdate = line[18:-2].split(' ')[0].split('-')
+            spentdate = datetime(int(splitdate[0]),
+                                 int(splitdate[1]),
+                                 int(splitdate[2]))
+            continue
+        if not line.startswith('|') or re.match('\|(-*\+)*-*\|', line):
+            continue
+        columns = [val.strip() for val in re.findall(' *([^|]+) *', line)]
+        hours, minutes = columns[2].split(':')
+        spenthours = float(hours) + float(minutes) / 60.
+        bookings.append({'issue_id': columns[0], 
+                         'spent_on': spentdate.date(),
+                         'hours': spenthours, 
+                         'comments': columns[1]})
+    BookingsMenu(bookings).print_all()
+
 
 def book_time(TimeEntry, bookings):
     for entry in bookings:
@@ -162,6 +190,10 @@ if __name__ == "__main__":
         config.read('octodon.cfg')
     config.read(cfgfile)
 
+    editor = os.environ.get('EDITOR', 'vi')
+    if config.has_section('main') and config.has_option('main', 'editor'):
+        editor = config.get('main', 'editor')
+    
     class TimeEntry(ActiveResource):
         _site = config.get('redmine', 'url')
         _user = config.get('redmine', 'user')
@@ -172,13 +204,21 @@ if __name__ == "__main__":
     parser.add_argument('--date', type=str, 
         help='the date for which to extract tracking data, in format YYYYMMDD')
     args = parser.parse_args()
+    
     if args.date:
-        bookings = get_timeinfo(datetime.strptime(args.date, '%Y%m%d'))
+        spent_on = datetime.strptime(args.date, '%Y%m%d')
     else:
-        bookings = get_timeinfo()
+        spent_on = datetime.now()
 
-    menu = BookingsMenu(bookings)
-    new_bookings = menu()
+    bookings = get_timeinfo(date=spent_on)
 
-    if new_bookings:
+    tempfile = write_to_file(bookings, spent_on)
+    subprocess.check_call(
+        [editor + ' ' + tempfile.name], shell=True)
+    new_bookings = read_from_file(tempfile.name)
+    tempfile.close()
+
+    book_now = raw_input('Book now? [y/N] ')
+
+    if new_bookings and book_now.lower() == 'y':
         book_time(TimeEntry, new_bookings)

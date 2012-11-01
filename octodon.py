@@ -45,18 +45,21 @@ def format_spent_time(time):
 def pad(string, length):
     return string + ' ' * (length - len(string))
 
-def write_to_file(bookingsi, spent_on):
-    tmpfile = NamedTemporaryFile(mode='w')
+def write_to_file(bookingsi, spent_on, file_name=None):
+    if file_name is not None:
+        tmpfile = open(file_name, 'w')
+    else:
+        tmpfile = NamedTemporaryFile(mode='w')
     tmpfile.write('#+BEGIN: clocktable :maxlevel 2 :scope file\n')
     tmpfile.write('Clock summary at [' + 
             spent_on.strftime('%Y-%m-%d %a %H:%M') + ']\n')
     tmpfile.write('\n')
     max_desc_len = max([len(b['description']) for b in bookings])
     for entry in bookings:
-        tmpfile.write('|------+-%s-+-------|\n' % ('-' * max_desc_len))
+        tmpfile.write('+------+-%s-+-------+\n' % ('-' * max_desc_len))
         tmpfile.write('| %04d | %s | %s |\n' % (entry['issue_id'],
                 pad(entry['description'], max_desc_len), format_spent_time(entry['hours'])))
-    tmpfile.write('|------+-%s-+-------|\n' % ('-' * max_desc_len))
+    tmpfile.write('+------+-%s-+-------+\n' % ('-' * max_desc_len))
     tmpfile.flush()
     return tmpfile
 
@@ -73,15 +76,16 @@ def read_from_file(filename):
                                  int(splitdate[1]),
                                  int(splitdate[2]))
             continue
-        if not line.startswith('|') or re.match('\|(-*\+)*-*\|', line):
+        if not line.startswith('|') or re.match('\+(-*\+)*-*\+', line):
             continue
         columns = [val.strip() for val in re.findall(' *([^|]+) *', line)]
         hours, minutes = columns[2].split(':')
         spenthours = float(hours) + float(minutes) / 60.
-        bookings.append({'issue_id': columns[0], 
+        bookings.append({'issue_id': int(columns[0]), 
                          'spent_on': spentdate.date(),
-                         'hours': spenthours, 
-                         'comments': columns[1]})
+                         'hours': float(spenthours), 
+                         'comments': columns[1],
+                         'description': columns[1],})
     return bookings
 
 
@@ -183,6 +187,8 @@ class BookingsMenu(object):
 if __name__ == "__main__":
     cfgfile = os.path.join(os.path.dirname(os.path.abspath(__file__)),
             'octodon.cfg')
+    sessionfile = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+            '.octodon_session_timelog')
     config = SafeConfigParser()
     if not os.path.exists(cfgfile):
         if not os.path.exists('octodon.cfg'):
@@ -211,16 +217,31 @@ if __name__ == "__main__":
     else:
         spent_on = datetime.now()
 
-    bookings = get_timeinfo(date=spent_on)
+    if os.path.exists(sessionfile):
+        continue_session = raw_input('Continue existing session? [Y/n] ')
+        if not continue_session.lower() == 'n':
+            bookings = read_from_file(sessionfile)
+        else:
+            bookings = get_timeinfo(date=spent_on)
+    else:
+        bookings = get_timeinfo(date=spent_on)
 
-    tempfile = write_to_file(bookings, spent_on)
-    subprocess.check_call(
-        [editor + ' ' + tempfile.name], shell=True)
-    new_bookings = read_from_file(tempfile.name)
-    tempfile.close()
+    finished = False
+    while not finished:
+        tempfile = write_to_file(bookings, spent_on)
+        subprocess.check_call(
+            [editor + ' ' + tempfile.name], shell=True)
+        bookings = read_from_file(tempfile.name)
+        tempfile.close()
 
-    BookingsMenu(new_bookings).print_all()
-    book_now = raw_input('Book now? [y/N] ')
+        BookingsMenu(bookings).print_all()
+        book_now = raw_input('Book now? [y/N] ')
 
-    if new_bookings and book_now.lower() == 'y':
-        book_time(TimeEntry, new_bookings)
+        if bookings and book_now.lower() == 'y':
+            book_time(TimeEntry, bookings)
+            finished = True
+        else:
+            edit_again = raw_input('Edit again? [Y/n] ')
+            if edit_again.lower() == 'n':
+                write_to_file(bookings, spent_on, file_name=sessionfile)
+                finished = True

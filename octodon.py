@@ -45,7 +45,7 @@ def format_spent_time(time):
 def pad(string, length):
     return string + ' ' * (length - len(string))
 
-def write_to_file(bookingsi, spent_on, file_name=None):
+def write_to_file(bookings, spent_on, file_name=None):
     if file_name is not None:
         tmpfile = open(file_name, 'w')
     else:
@@ -55,11 +55,19 @@ def write_to_file(bookingsi, spent_on, file_name=None):
             spent_on.strftime('%Y-%m-%d %a %H:%M') + ']\n')
     tmpfile.write('\n')
     max_desc_len = max([len(b['description']) for b in bookings])
+    tmpfile.write('| L | %s |    Time | iss  |\n' % pad('Headline', max_desc_len))
+    tmpfile.write('+---+-%s-+---------+------+\n' % ('-' * max_desc_len))
+    if len(bookings) == 0:
+        sum = 0.
+    else:
+        sum = reduce(lambda x,y: x+y, map(lambda x: x['hours'], bookings))
+    tmpfile.write('|   | %s | *%s* |      |\n' % (
+            pad('*Total time*', max_desc_len), format_spent_time(sum)))
     for entry in bookings:
-        tmpfile.write('+------+-%s-+-------+\n' % ('-' * max_desc_len))
-        tmpfile.write('| %04d | %s | %s |\n' % (entry['issue_id'],
-                pad(entry['description'], max_desc_len), format_spent_time(entry['hours'])))
-    tmpfile.write('+------+-%s-+-------+\n' % ('-' * max_desc_len))
+        tmpfile.write('+---+-%s-+---------+------+\n' % ('-' * max_desc_len))
+        tmpfile.write('| 1 | %s |   %s | %04d |\n' % (pad(entry['description'],
+            max_desc_len), format_spent_time(entry['hours']), entry['issue_id']))
+    tmpfile.write('+---+-%s-+---------+------+\n' % ('-' * max_desc_len))
     tmpfile.flush()
     return tmpfile
 
@@ -79,9 +87,11 @@ def read_from_file(filename):
         if not line.startswith('|') or re.match('\+(-*\+)*-*\+', line):
             continue
         columns = [val.strip() for val in re.findall(' *([^|]+) *', line)]
+        if columns[0] in ['L', '']:
+            continue
         hours, minutes = columns[2].split(':')
         spenthours = float(hours) + float(minutes) / 60.
-        bookings.append({'issue_id': int(columns[0]), 
+        bookings.append({'issue_id': int(columns[3]), 
                          'spent_on': spentdate.date(),
                          'hours': float(spenthours), 
                          'comments': columns[1],
@@ -223,6 +233,7 @@ if __name__ == "__main__":
             bookings = read_from_file(sessionfile)
         else:
             bookings = get_timeinfo(date=spent_on)
+        os.remove(sessionfile)
     else:
         bookings = get_timeinfo(date=spent_on)
 

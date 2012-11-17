@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from hamster.client import Storage
 from ConfigParser import SafeConfigParser
 import argparse
@@ -14,8 +14,10 @@ class Issue(ActiveResource):
     _user = None
     _password = None
 
-ticket_pattern = re.compile('#([0-9]*)')
-def get_timeinfo(date=datetime.now(), baseurl=''):
+ticket_pattern = re.compile('#([0-9]+)')
+ref_pattern = re.compile('    (.*)(refs |fixes )#([0-9]+)')
+
+def get_timeinfo(date=datetime.now(), baseurl='', loginfo={}):
     sto = Storage()
     facts = sto.get_facts(date)
     bookings = []
@@ -34,8 +36,32 @@ def get_timeinfo(date=datetime.now(), baseurl=''):
                          'hours': hours, 
                          #'link': ticket and baseurl + '/issues/%d/time_entries/new' % int(ticket[1:]) or '',
                          'description': fact.activity,
-                         'comments': ''})
+                         'comments': '; '.join(loginfo.get(ticket, []))})
     return bookings
+
+def extract_loginfo(log, mergewith={}):
+    matches = ref_pattern.finditer(log) or []
+    logdict = mergewith
+    for match in matches:
+        logdict.setdefault(int(match.group(3)),
+                []).append(match.group(1).strip(' ,'))
+    return logdict
+
+def get_loginfo_git(date=datetime.now(), author=None, repos=[], mergewith={}):
+    command = ['/usr/bin/git', '--no-pager', 'log', '--all', '--reverse']
+    args = ['--since="{%s}"' % date, '--until="{%s}"' % (date + timedelta(1))]
+    if author:
+        args.append('--author="%s"' % author)
+    logdict = mergewith
+    for repo in repos:
+        os.chdir(repo)
+        try:
+            out = subprocess.check_output(' '.join(command + args), shell=True)
+        except subprocess.CalledProcessError as cpe:
+            print('git returned %d: %s' % (cpe.returncode, cpe.output))
+            continue
+        logdict = extract_loginfo(out, logdict)
+    return logdict
 
 def format_spent_time(time):
     hours = math.floor(time)
@@ -50,24 +76,33 @@ def write_to_file(bookings, spent_on, file_name=None):
         tmpfile = open(file_name, 'w')
     else:
         tmpfile = NamedTemporaryFile(mode='w')
+    summary_time = max(datetime.now(),
+            (spent_on + timedelta(1) - timedelta(0,1)))
     tmpfile.write('#+BEGIN: clocktable :maxlevel 2 :scope file\n')
     tmpfile.write('Clock summary at [' + 
-            spent_on.strftime('%Y-%m-%d %a %H:%M') + ']\n')
+            summary_time.strftime('%Y-%m-%d %a %H:%M') + ']\n')
     tmpfile.write('\n')
     max_desc_len = max([len(b['description']) for b in bookings])
-    tmpfile.write('| L | %s |    Time | iss  |\n' % pad('Headline', max_desc_len))
-    tmpfile.write('+---+-%s-+---------+------+\n' % ('-' * max_desc_len))
+    max_comment_len = max([len(b['comments']) for b in bookings] + [8])
+    tmpfile.write('| L | %s |    Time | iss  | %s |\n' % (pad('Headline',
+            max_desc_len), pad('Comments', max_comment_len)))
+    tmpfile.write('+---+-%s-+---------+------+-%s-+\n' % (('-' * max_desc_len),
+            ('-' * max_comment_len)))
     if len(bookings) == 0:
         sum = 0.
     else:
         sum = reduce(lambda x,y: x+y, map(lambda x: x['hours'], bookings))
-    tmpfile.write('|   | %s | *%s* |      |\n' % (
-            pad('*Total time*', max_desc_len), format_spent_time(sum)))
+    tmpfile.write('|   | %s | *%s* |      | %s |\n' % (
+            pad('*Total time*', max_desc_len), format_spent_time(sum),
+            ' ' * max_comment_len))
     for entry in bookings:
-        tmpfile.write('+---+-%s-+---------+------+\n' % ('-' * max_desc_len))
-        tmpfile.write('| 1 | %s |   %s | %04d |\n' % (pad(entry['description'],
-            max_desc_len), format_spent_time(entry['hours']), entry['issue_id']))
-    tmpfile.write('+---+-%s-+---------+------+\n' % ('-' * max_desc_len))
+        tmpfile.write('+---+-%s-+---------+------+-%s-+\n' % (('-' * max_desc_len),
+                ('-' * max_comment_len)))
+        tmpfile.write('| 1 | %s |   %s | %04d | %s |\n' % (pad(entry['description'],
+                max_desc_len), format_spent_time(entry['hours']),
+                entry['issue_id'], pad(entry['comments'], max_comment_len)))
+    tmpfile.write('+---+-%s-+---------+------+-%s-+\n' % (('-' * max_desc_len),
+            ('-' * max_comment_len)))
     tmpfile.flush()
     return tmpfile
 
@@ -94,7 +129,7 @@ def read_from_file(filename):
         bookings.append({'issue_id': int(columns[3]), 
                          'spent_on': spentdate.date(),
                          'hours': float(spenthours), 
-                         'comments': columns[1],
+                         'comments': columns[4],
                          'description': columns[1],})
     return bookings
 
@@ -225,17 +260,26 @@ if __name__ == "__main__":
     if args.date:
         spent_on = datetime.strptime(args.date, '%Y%m%d')
     else:
-        spent_on = datetime.now()
+        spent_on = datetime.now().replace(hour=0, minute=0, second=0,
+                microsecond=0)
+
+    loginfo = {}
+    if config.has_section('main') and config.has_option('main', 'vcs') and \
+            'git' in config.get('main', 'vcs'):
+        author = config.get('git', 'author')
+        repos = [r for r in config.get('git', 'repos').split('\n') if r.strip()]
+        loginfo = get_loginfo_git(date=spent_on, author=author, repos=repos,
+                mergewith=loginfo)
 
     if os.path.exists(sessionfile):
         continue_session = raw_input('Continue existing session? [Y/n] ')
         if not continue_session.lower() == 'n':
             bookings = read_from_file(sessionfile)
         else:
-            bookings = get_timeinfo(date=spent_on)
+            bookings = get_timeinfo(date=spent_on, loginfo=loginfo)
         os.remove(sessionfile)
     else:
-        bookings = get_timeinfo(date=spent_on)
+        bookings = get_timeinfo(date=spent_on, loginfo=loginfo)
 
     finished = False
     while not finished:

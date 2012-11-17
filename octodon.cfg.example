@@ -1,7 +1,13 @@
 [main]
 editor = vim
+vcs = git
 
 [redmine]
 url = http://example.org/redmine
 user = me@example.org
 pass = secret
+
+[git]
+author = me@example.com
+repos =
+    /home/me/myrepo

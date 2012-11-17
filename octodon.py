@@ -3,8 +3,10 @@ from datetime import datetime, date
 from hamster.client import Storage
 from ConfigParser import SafeConfigParser
 import argparse
+import subprocess
+from tempfile import NamedTemporaryFile
 import re
-import sys,os
+import sys, os, math
 from pyactiveresource.activeresource import ActiveResource
 
 class Issue(ActiveResource):
@@ -35,10 +37,73 @@ def get_timeinfo(date=datetime.now(), baseurl=''):
                          'comments': ''})
     return bookings
 
+def format_spent_time(time):
+    hours = math.floor(time)
+    mins = (time - hours) * 60
+    return '%2d:%02d' % (hours, mins)
+
+def pad(string, length):
+    return string + ' ' * (length - len(string))
+
+def write_to_file(bookings, spent_on, file_name=None):
+    if file_name is not None:
+        tmpfile = open(file_name, 'w')
+    else:
+        tmpfile = NamedTemporaryFile(mode='w')
+    tmpfile.write('#+BEGIN: clocktable :maxlevel 2 :scope file\n')
+    tmpfile.write('Clock summary at [' + 
+            spent_on.strftime('%Y-%m-%d %a %H:%M') + ']\n')
+    tmpfile.write('\n')
+    max_desc_len = max([len(b['description']) for b in bookings])
+    tmpfile.write('| L | %s |    Time | iss  |\n' % pad('Headline', max_desc_len))
+    tmpfile.write('+---+-%s-+---------+------+\n' % ('-' * max_desc_len))
+    if len(bookings) == 0:
+        sum = 0.
+    else:
+        sum = reduce(lambda x,y: x+y, map(lambda x: x['hours'], bookings))
+    tmpfile.write('|   | %s | *%s* |      |\n' % (
+            pad('*Total time*', max_desc_len), format_spent_time(sum)))
+    for entry in bookings:
+        tmpfile.write('+---+-%s-+---------+------+\n' % ('-' * max_desc_len))
+        tmpfile.write('| 1 | %s |   %s | %04d |\n' % (pad(entry['description'],
+            max_desc_len), format_spent_time(entry['hours']), entry['issue_id']))
+    tmpfile.write('+---+-%s-+---------+------+\n' % ('-' * max_desc_len))
+    tmpfile.flush()
+    return tmpfile
+
+def read_from_file(filename):
+    tmpfile = open(filename, 'r')
+    data = tmpfile.readlines()
+    tmpfile.close()
+    bookings = []
+    spentdate = None
+    for line in data:
+        if line.startswith('Clock summary at ['):
+            splitdate = line[18:-2].split(' ')[0].split('-')
+            spentdate = datetime(int(splitdate[0]),
+                                 int(splitdate[1]),
+                                 int(splitdate[2]))
+            continue
+        if not line.startswith('|') or re.match('\+(-*\+)*-*\+', line):
+            continue
+        columns = [val.strip() for val in re.findall(' *([^|]+) *', line)]
+        if columns[0] in ['L', '']:
+            continue
+        hours, minutes = columns[2].split(':')
+        spenthours = float(hours) + float(minutes) / 60.
+        bookings.append({'issue_id': int(columns[3]), 
+                         'spent_on': spentdate.date(),
+                         'hours': float(spenthours), 
+                         'comments': columns[1],
+                         'description': columns[1],})
+    return bookings
+
+
 def book_time(TimeEntry, bookings):
     for entry in bookings:
         rm_entry = entry.copy()
-        del rm_entry['description']
+        if 'description' in rm_entry:
+            del rm_entry['description']
         redmine_entry = TimeEntry(rm_entry)
         redmine_entry.save()
 
@@ -132,6 +197,8 @@ class BookingsMenu(object):
 if __name__ == "__main__":
     cfgfile = os.path.join(os.path.dirname(os.path.abspath(__file__)),
             'octodon.cfg')
+    sessionfile = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+            '.octodon_session_timelog')
     config = SafeConfigParser()
     if not os.path.exists(cfgfile):
         if not os.path.exists('octodon.cfg'):
@@ -140,6 +207,10 @@ if __name__ == "__main__":
         config.read('octodon.cfg')
     config.read(cfgfile)
 
+    editor = os.environ.get('EDITOR', 'vi')
+    if config.has_section('main') and config.has_option('main', 'editor'):
+        editor = config.get('main', 'editor')
+    
     class TimeEntry(ActiveResource):
         _site = config.get('redmine', 'url')
         _user = config.get('redmine', 'user')
@@ -150,13 +221,38 @@ if __name__ == "__main__":
     parser.add_argument('--date', type=str, 
         help='the date for which to extract tracking data, in format YYYYMMDD')
     args = parser.parse_args()
+    
     if args.date:
-        bookings = get_timeinfo(datetime.strptime(args.date, '%Y%m%d'))
+        spent_on = datetime.strptime(args.date, '%Y%m%d')
     else:
-        bookings = get_timeinfo()
+        spent_on = datetime.now()
 
-    menu = BookingsMenu(bookings)
-    new_bookings = menu()
+    if os.path.exists(sessionfile):
+        continue_session = raw_input('Continue existing session? [Y/n] ')
+        if not continue_session.lower() == 'n':
+            bookings = read_from_file(sessionfile)
+        else:
+            bookings = get_timeinfo(date=spent_on)
+        os.remove(sessionfile)
+    else:
+        bookings = get_timeinfo(date=spent_on)
 
-    if new_bookings:
-        book_time(TimeEntry, new_bookings)
+    finished = False
+    while not finished:
+        tempfile = write_to_file(bookings, spent_on)
+        subprocess.check_call(
+            [editor + ' ' + tempfile.name], shell=True)
+        bookings = read_from_file(tempfile.name)
+        tempfile.close()
+
+        BookingsMenu(bookings).print_all()
+        book_now = raw_input('Book now? [y/N] ')
+
+        if bookings and book_now.lower() == 'y':
+            book_time(TimeEntry, bookings)
+            finished = True
+        else:
+            edit_again = raw_input('Edit again? [Y/n] ')
+            if edit_again.lower() == 'n':
+                write_to_file(bookings, spent_on, file_name=sessionfile)
+                finished = True

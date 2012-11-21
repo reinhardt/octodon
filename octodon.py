@@ -293,7 +293,9 @@ if __name__ == "__main__":
         book_now = raw_input('Book now? [y/N] ')
 
         if bookings and book_now.lower() == 'y':
+            write_to_file(bookings, spent_on, file_name=sessionfile)
             book_time(TimeEntry, bookings)
+            os.remove(sessionfile)
             finished = True
         else:
             edit_again = raw_input('Edit again? [Y/n] ')

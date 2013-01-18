@@ -76,7 +76,7 @@ def write_to_file(bookings, spent_on, file_name=None):
         tmpfile = open(file_name, 'w')
     else:
         tmpfile = NamedTemporaryFile(mode='w')
-    summary_time = max(datetime.now(),
+    summary_time = min(datetime.now(),
             (spent_on + timedelta(1) - timedelta(0,1)))
     tmpfile.write('#+BEGIN: clocktable :maxlevel 2 :scope file\n')
     tmpfile.write('Clock summary at [' + 

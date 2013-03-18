@@ -71,6 +71,24 @@ def format_spent_time(time):
 def pad(string, length):
     return string + ' ' * (length - len(string))
 
+def make_table(rows):
+    columns = zip(*rows)
+    max_lens = [max([len(entry) for entry in column]) for column in columns]
+    out_strs = []
+    divider = '+%s+' % '+'.join(
+        ['-' * (max_len + 2) for max_len in max_lens]
+    )
+    for row in rows:
+        vals = []
+        for i in range(len(row)):
+            vals.append(' %s ' % pad(row[i], max_lens[i]))
+        row_str = '|%s|' % '|'.join(vals)
+        out_strs.append(divider)
+        out_strs.append(row_str)
+
+    out_strs.append(divider)
+    return '\n'.join(out_strs)
+
 def write_to_file(bookings, spent_on, file_name=None):
     if file_name is not None:
         tmpfile = open(file_name, 'w')
@@ -82,27 +100,23 @@ def write_to_file(bookings, spent_on, file_name=None):
     tmpfile.write('Clock summary at [' + 
             summary_time.strftime('%Y-%m-%d %a %H:%M') + ']\n')
     tmpfile.write('\n')
-    max_desc_len = max([len(b['description']) for b in bookings])
-    max_comment_len = max([len(b['comments']) for b in bookings] + [8])
-    tmpfile.write('| L | %s |    Time | iss  | %s |\n' % (pad('Headline',
-            max_desc_len), pad('Comments', max_comment_len)))
-    tmpfile.write('+---+-%s-+---------+------+-%s-+\n' % (('-' * max_desc_len),
-            ('-' * max_comment_len)))
+
+    rows = []
+    rows.append(['L', 'Headline', 'Time', 'iss', 'Comments'])
+
     if len(bookings) == 0:
         sum = 0.
     else:
         sum = reduce(lambda x,y: x+y, map(lambda x: x['hours'], bookings))
-    tmpfile.write('|   | %s | *%s* |      | %s |\n' % (
-            pad('*Total time*', max_desc_len), format_spent_time(sum),
-            ' ' * max_comment_len))
-    for entry in bookings:
-        tmpfile.write('+---+-%s-+---------+------+-%s-+\n' % (('-' * max_desc_len),
-                ('-' * max_comment_len)))
-        tmpfile.write('| 1 | %s |   %s | %04d | %s |\n' % (pad(entry['description'],
-                max_desc_len), format_spent_time(entry['hours']),
-                entry['issue_id'], pad(entry['comments'], max_comment_len)))
-    tmpfile.write('+---+-%s-+---------+------+-%s-+\n' % (('-' * max_desc_len),
-            ('-' * max_comment_len)))
+    rows.append([' ', '*Total time*', '*%s*' % format_spent_time(sum), ' ', 
+                 ' '])
+    rows += [['1',
+              entry['description'],
+              format_spent_time(entry['hours']),
+              '%04d' % entry['issue_id'],
+              entry['comments'],
+              ] for entry in bookings]
+    tmpfile.write(make_table(rows))
     tmpfile.flush()
     return tmpfile
 
@@ -246,10 +260,18 @@ if __name__ == "__main__":
     if config.has_section('main') and config.has_option('main', 'editor'):
         editor = config.get('main', 'editor')
     
-    class TimeEntry(ActiveResource):
+    class RedmineResource(ActiveResource):
         _site = config.get('redmine', 'url')
         _user = config.get('redmine', 'user')
         _password = config.get('redmine', 'pass')
+
+    class TimeEntry(RedmineResource):
+        pass
+
+    class Enumerations(RedmineResource):
+        pass
+
+    activities = Enumerations.get('time_entry_activities')
 
     parser = argparse.ArgumentParser(description='Extract time tracking data '\
         'from hamster and book it to redmine')

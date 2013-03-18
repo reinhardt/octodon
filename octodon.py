@@ -17,7 +17,11 @@ class Issue(ActiveResource):
 ticket_pattern = re.compile('#([0-9]+)')
 ref_pattern = re.compile('    (.*)(refs |fixes )#([0-9]+)')
 
-def get_timeinfo(date=datetime.now(), baseurl='', loginfo={}):
+def get_timeinfo(date=datetime.now(), baseurl='', loginfo={}, activities=[]):
+    default_activity = [act for act in activities
+                        if act['is_default'] == 'true']
+    default_activity = default_activity and default_activity[0] or None
+
     sto = Storage()
     facts = sto.get_facts(date)
     bookings = []
@@ -36,6 +40,7 @@ def get_timeinfo(date=datetime.now(), baseurl='', loginfo={}):
                          'hours': hours, 
                          #'link': ticket and baseurl + '/issues/%d/time_entries/new' % int(ticket[1:]) or '',
                          'description': fact.activity,
+                         'activity_id': default_activity['id'],
                          'comments': '; '.join(loginfo.get(ticket, []))})
     return bookings
 
@@ -89,11 +94,12 @@ def make_table(rows):
     out_strs.append(divider)
     return '\n'.join(out_strs)
 
-def write_to_file(bookings, spent_on, file_name=None):
+def write_to_file(bookings, spent_on, activities, file_name=None):
     if file_name is not None:
         tmpfile = open(file_name, 'w')
     else:
         tmpfile = NamedTemporaryFile(mode='w')
+    activities_dict = dict([(act['id'], act) for act in activities])
     summary_time = min(datetime.now(),
             (spent_on + timedelta(1) - timedelta(0,1)))
     tmpfile.write('#+BEGIN: clocktable :maxlevel 2 :scope file\n')
@@ -102,30 +108,37 @@ def write_to_file(bookings, spent_on, file_name=None):
     tmpfile.write('\n')
 
     rows = []
-    rows.append(['L', 'Headline', 'Time', 'iss', 'Comments'])
+    rows.append(['L', 'Headline', 'Time', 'Activity', 'iss', 'Comments'])
 
     if len(bookings) == 0:
         sum = 0.
     else:
         sum = reduce(lambda x,y: x+y, map(lambda x: x['hours'], bookings))
     rows.append([' ', '*Total time*', '*%s*' % format_spent_time(sum), ' ', 
-                 ' '])
+                 ' ', ' '])
     rows += [['1',
               entry['description'],
               format_spent_time(entry['hours']),
+              activities_dict[entry['activity_id']]['name'],
               '%04d' % entry['issue_id'],
               entry['comments'],
               ] for entry in bookings]
     tmpfile.write(make_table(rows))
+
+    tmpfile.write('\n')
+    tmpfile.write('\n')
+    tmpfile.write('Available activities: %s\n' % ', '.join(
+        [act['name'] for act in activities]))
     tmpfile.flush()
     return tmpfile
 
-def read_from_file(filename):
+def read_from_file(filename, activities):
     tmpfile = open(filename, 'r')
     data = tmpfile.readlines()
     tmpfile.close()
     bookings = []
     spentdate = None
+    activities_dict = dict([(act['name'], act) for act in activities])
     for line in data:
         if line.startswith('Clock summary at ['):
             splitdate = line[18:-2].split(' ')[0].split('-')
@@ -140,11 +153,13 @@ def read_from_file(filename):
             continue
         hours, minutes = columns[2].split(':')
         spenthours = float(hours) + float(minutes) / 60.
-        bookings.append({'issue_id': int(columns[3]), 
+        bookings.append({'issue_id': int(columns[4]), 
                          'spent_on': spentdate.date(),
                          'hours': float(spenthours), 
-                         'comments': columns[4],
-                         'description': columns[1],})
+                         'comments': columns[5],
+                         'description': columns[1],
+                         'activity_id': activities_dict[columns[3]]['id'],
+                        })
     return bookings
 
 
@@ -296,31 +311,31 @@ if __name__ == "__main__":
     if os.path.exists(sessionfile):
         continue_session = raw_input('Continue existing session? [Y/n] ')
         if not continue_session.lower() == 'n':
-            bookings = read_from_file(sessionfile)
+            bookings = read_from_file(sessionfile, activities=activities)
         else:
-            bookings = get_timeinfo(date=spent_on, loginfo=loginfo)
+            bookings = get_timeinfo(date=spent_on, loginfo=loginfo, activities=activities)
         os.remove(sessionfile)
     else:
-        bookings = get_timeinfo(date=spent_on, loginfo=loginfo)
+        bookings = get_timeinfo(date=spent_on, loginfo=loginfo, activities=activities)
 
     finished = False
     while not finished:
-        tempfile = write_to_file(bookings, spent_on)
+        tempfile = write_to_file(bookings, spent_on, activities)
         subprocess.check_call(
             [editor + ' ' + tempfile.name], shell=True)
-        bookings = read_from_file(tempfile.name)
+        bookings = read_from_file(tempfile.name, activities)
         tempfile.close()
 
         BookingsMenu(bookings).print_all()
         book_now = raw_input('Book now? [y/N] ')
 
         if bookings and book_now.lower() == 'y':
-            write_to_file(bookings, spent_on, file_name=sessionfile)
+            write_to_file(bookings, spent_on, activities=activities, file_name=sessionfile)
             book_time(TimeEntry, bookings)
             os.remove(sessionfile)
             finished = True
         else:
             edit_again = raw_input('Edit again? [Y/n] ')
             if edit_again.lower() == 'n':
-                write_to_file(bookings, spent_on, file_name=sessionfile)
+                write_to_file(bookings, spent_on, activities=activities, file_name=sessionfile)
                 finished = True

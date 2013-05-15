@@ -107,6 +107,21 @@ def make_table(rows):
     return '\n'.join(out_strs)
 
 
+def print_bookings(bookings):
+    for i, b in enumerate(bookings):
+        print('[%d]' % i)
+        for key in b:
+            print('  %s: %s' % (key, b[key]))
+        print('')
+    print('total hours: %.2f' % get_time_sum(bookings))
+
+
+def get_time_sum(bookings):
+    if len(bookings) == 0:
+        return 0.
+    return reduce(lambda x, y: x+y, map(lambda x: x['hours'], bookings))
+
+
 def write_to_file(bookings, spent_on, activities, file_name=None):
     if file_name is not None:
         tmpfile = open(file_name, 'w')
@@ -187,93 +202,6 @@ def book_time(TimeEntry, bookings):
         redmine_entry.save()
 
 
-class BookingsMenu(object):
-    bookings = []
-
-    def __init__(self, bookings):
-        self.bookings = bookings
-
-    def __call__(self):
-        self.print_all()
-        command = self.get_command()
-        while not command.startswith('c'):
-            if command.startswith('e'):
-                self.edit()
-            elif command.isdigit():
-                self.edit(int(command))
-            elif command.startswith('d'):
-                entry = int(raw_input('Delete Entry No.? '))
-                del self.bookings[entry]
-            elif command.startswith('b'):
-                return self.bookings
-            if command.startswith('a'):
-                self.add()
-            self.print_all()
-            command = self.get_command()
-        return None
-
-    def get_command(self):
-        print('[a]dd, [e]dit, [d]elete, [b]ook, [c]ancel')
-        return raw_input('Command/Entry No.? ')
-
-    def print_all(self):
-        for i, b in enumerate(self.bookings):
-            print('[%d]' % i)
-            for key in b:
-                print('  %s: %s' % (key, b[key]))
-            print('')
-        print('total hours: %.2f' % self.sum())
-
-    def add(self):
-        self.bookings.append({'issue_id': -1,
-                             'spent_on': date.today(),
-                             'hours': 0.,
-                             'description': '',
-                             'comments': ''})
-        self.edit(-1)
-
-    def edit(self, entry=None):
-        if entry is None:
-            entry = int(raw_input('Edit Entry No.? '))
-        while entry < 0 - len(self.bookings) or entry >= len(self.bookings):
-            print('No entry with index %d!' % entry)
-            entry = int(raw_input('Edit Entry No.? '))
-            if not entry:
-                return
-        print('description: ' + self.bookings[entry]['description'])
-        for key in bookings[entry]:
-            if key == 'description':
-                continue
-            success = False
-            while not success:
-                newval = raw_input('%s [%s]: ' % (key, self.bookings[entry][key]))
-                if newval:
-                    if isinstance(self.bookings[entry][key], date):
-                        try:
-                            newval = date(*(map(lambda x: int(x), newval.split('-'))))
-                            success = True
-                        except:
-                            print('ERROR: Could not convert to date: ' + newval)
-                            success = False
-                    else:
-                        valtype = type(self.bookings[entry][key])
-                        try:
-                            newval = valtype(newval)
-                            success = True
-                        except:
-                            print('ERROR: Could not convert to %s: %s' % (valtype, newval))
-                            success = False
-                    if success:
-                        self.bookings[entry][key] = newval
-                else:
-                    success = True
-
-    def sum(self):
-        if len(self.bookings) == 0:
-            return 0.
-        return reduce(lambda x,y: x+y, map(lambda x: x['hours'], self.bookings))
-
-
 if __name__ == "__main__":
     cfgfile = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                            'octodon.cfg')
@@ -348,7 +276,7 @@ if __name__ == "__main__":
         bookings = read_from_file(tempfile.name, activities)
         tempfile.close()
 
-        BookingsMenu(bookings).print_all()
+        print_bookings(bookings)
         book_now = raw_input('Book now? [y/N] ')
 
         if bookings and book_now.lower() == 'y':

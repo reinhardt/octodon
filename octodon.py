@@ -6,16 +6,21 @@ import argparse
 import subprocess
 from tempfile import NamedTemporaryFile
 import re
-import sys, os, math
+import sys
+import os
+import math
 from pyactiveresource.activeresource import ActiveResource
+
 
 class Issue(ActiveResource):
     _site = None
     _user = None
     _password = None
 
+
 ticket_pattern = re.compile('#([0-9]+)')
 ref_pattern = re.compile('    (.*)(refs |fixes )#([0-9]+)')
+
 
 def get_timeinfo(date=datetime.now(), baseurl='', loginfo={}, activities=[]):
     default_activity = [act for act in activities
@@ -29,28 +34,32 @@ def get_timeinfo(date=datetime.now(), baseurl='', loginfo={}, activities=[]):
         #delta = (fact.end_time or datetime.now()) - fact.start_time
         #hours = round(fact.delta.seconds / 3600. * 4 + .25) / 4.
         hours = fact.delta.seconds / 3600.
-        existing = filter(lambda b: b['description'] == fact.activity and b['spent_on'] == fact.date, bookings)
+        existing = filter(lambda b: b['description'] == fact.activity
+                          and b['spent_on'] == fact.date, bookings)
         if existing:
             existing[0]['hours'] += hours
             continue
-        tickets = [ticket_pattern.search(s).group(1) for s in fact.tags + [fact.activity]  + [fact.description or ''] if ticket_pattern.search(s)]
+        tickets = [ticket_pattern.search(s).group(1) for s in
+                   fact.tags + [fact.activity] + [fact.description or '']
+                   if ticket_pattern.search(s)]
         ticket = len(tickets) and int(tickets[0]) or -1
-        bookings.append({'issue_id': ticket, 
+        bookings.append({'issue_id': ticket,
                          'spent_on': fact.date,
-                         'hours': hours, 
-                         #'link': ticket and baseurl + '/issues/%d/time_entries/new' % int(ticket[1:]) or '',
+                         'hours': hours,
                          'description': fact.activity,
                          'activity_id': default_activity['id'],
                          'comments': '; '.join(loginfo.get(ticket, []))})
     return bookings
+
 
 def extract_loginfo(log, mergewith={}):
     matches = ref_pattern.finditer(log) or []
     logdict = mergewith
     for match in matches:
         logdict.setdefault(int(match.group(3)),
-                []).append(match.group(1).strip(' ,'))
+                           []).append(match.group(1).strip(' ,'))
     return logdict
+
 
 def get_loginfo_git(date=datetime.now(), author=None, repos=[], mergewith={}):
     command = ['/usr/bin/git', '--no-pager', 'log', '--all', '--reverse']
@@ -68,13 +77,16 @@ def get_loginfo_git(date=datetime.now(), author=None, repos=[], mergewith={}):
         logdict = extract_loginfo(out, logdict)
     return logdict
 
+
 def format_spent_time(time):
     hours = math.floor(time)
     mins = (time - hours) * 60
     return '%2d:%02d' % (hours, mins)
 
+
 def pad(string, length):
     return string + ' ' * (length - len(string))
+
 
 def make_table(rows):
     columns = zip(*rows)
@@ -94,17 +106,19 @@ def make_table(rows):
     out_strs.append(divider)
     return '\n'.join(out_strs)
 
+
 def write_to_file(bookings, spent_on, activities, file_name=None):
     if file_name is not None:
         tmpfile = open(file_name, 'w')
     else:
         tmpfile = NamedTemporaryFile(mode='w')
     activities_dict = dict([(act['id'], act) for act in activities])
-    summary_time = min(datetime.now(),
-            (spent_on + timedelta(1) - timedelta(0,1)))
+    summary_time = min(
+        datetime.now(),
+        (spent_on + timedelta(1) - timedelta(0, 1)))
     tmpfile.write('#+BEGIN: clocktable :maxlevel 2 :scope file\n')
-    tmpfile.write('Clock summary at [' + 
-            summary_time.strftime('%Y-%m-%d %a %H:%M') + ']\n')
+    tmpfile.write('Clock summary at [' +
+                  summary_time.strftime('%Y-%m-%d %a %H:%M') + ']\n')
     tmpfile.write('\n')
 
     rows = []
@@ -113,8 +127,8 @@ def write_to_file(bookings, spent_on, activities, file_name=None):
     if len(bookings) == 0:
         sum = 0.
     else:
-        sum = reduce(lambda x,y: x+y, map(lambda x: x['hours'], bookings))
-    rows.append([' ', '*Total time*', '*%s*' % format_spent_time(sum), ' ', 
+        sum = reduce(lambda x, y: x+y, map(lambda x: x['hours'], bookings))
+    rows.append([' ', '*Total time*', '*%s*' % format_spent_time(sum), ' ',
                  ' ', ' '])
     rows += [['1',
               entry['description'],
@@ -131,6 +145,7 @@ def write_to_file(bookings, spent_on, activities, file_name=None):
         [act['name'] for act in activities]))
     tmpfile.flush()
     return tmpfile
+
 
 def read_from_file(filename, activities):
     tmpfile = open(filename, 'r')
@@ -153,9 +168,9 @@ def read_from_file(filename, activities):
             continue
         hours, minutes = columns[2].split(':')
         spenthours = float(hours) + float(minutes) / 60.
-        bookings.append({'issue_id': int(columns[4]), 
+        bookings.append({'issue_id': int(columns[4]),
                          'spent_on': spentdate.date(),
-                         'hours': float(spenthours), 
+                         'hours': float(spenthours),
                          'comments': columns[5],
                          'description': columns[1],
                          'activity_id': activities_dict[columns[3]]['id'],
@@ -171,8 +186,8 @@ def book_time(TimeEntry, bookings):
         redmine_entry = TimeEntry(rm_entry)
         redmine_entry.save()
 
+
 class BookingsMenu(object):
-    
     bookings = []
 
     def __init__(self, bookings):
@@ -200,7 +215,7 @@ class BookingsMenu(object):
     def get_command(self):
         print('[a]dd, [e]dit, [d]elete, [b]ook, [c]ancel')
         return raw_input('Command/Entry No.? ')
-        
+
     def print_all(self):
         for i, b in enumerate(self.bookings):
             print('[%d]' % i)
@@ -210,9 +225,9 @@ class BookingsMenu(object):
         print('total hours: %.2f' % self.sum())
 
     def add(self):
-        self.bookings.append({'issue_id': -1, 
+        self.bookings.append({'issue_id': -1,
                              'spent_on': date.today(),
-                             'hours': 0., 
+                             'hours': 0.,
                              'description': '',
                              'comments': ''})
         self.edit(-1)
@@ -258,11 +273,12 @@ class BookingsMenu(object):
             return 0.
         return reduce(lambda x,y: x+y, map(lambda x: x['hours'], self.bookings))
 
+
 if __name__ == "__main__":
     cfgfile = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-            'octodon.cfg')
+                           'octodon.cfg')
     sessionfile = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-            '.octodon_session_timelog')
+                               '.octodon_session_timelog')
     config = SafeConfigParser()
     if not os.path.exists(cfgfile):
         if not os.path.exists('octodon.cfg'):
@@ -274,7 +290,7 @@ if __name__ == "__main__":
     editor = os.environ.get('EDITOR', 'vi')
     if config.has_section('main') and config.has_option('main', 'editor'):
         editor = config.get('main', 'editor')
-    
+
     class RedmineResource(ActiveResource):
         _site = config.get('redmine', 'url')
         _user = config.get('redmine', 'user')
@@ -288,35 +304,41 @@ if __name__ == "__main__":
 
     activities = Enumerations.get('time_entry_activities')
 
-    parser = argparse.ArgumentParser(description='Extract time tracking data '\
+    parser = argparse.ArgumentParser(
+        description='Extract time tracking data '
         'from hamster and book it to redmine')
-    parser.add_argument('--date', type=str, 
+    parser.add_argument(
+        '--date',
+        type=str,
         help='the date for which to extract tracking data, in format YYYYMMDD')
     args = parser.parse_args()
-    
+
     if args.date:
         spent_on = datetime.strptime(args.date, '%Y%m%d')
     else:
         spent_on = datetime.now().replace(hour=0, minute=0, second=0,
-                microsecond=0)
+                                          microsecond=0)
 
     loginfo = {}
     if config.has_section('main') and config.has_option('main', 'vcs') and \
             'git' in config.get('main', 'vcs'):
         author = config.get('git', 'author')
-        repos = [r for r in config.get('git', 'repos').split('\n') if r.strip()]
+        repos = [r for r in config.get('git', 'repos').split('\n')
+                 if r.strip()]
         loginfo = get_loginfo_git(date=spent_on, author=author, repos=repos,
-                mergewith=loginfo)
+                                  mergewith=loginfo)
 
     if os.path.exists(sessionfile):
         continue_session = raw_input('Continue existing session? [Y/n] ')
         if not continue_session.lower() == 'n':
             bookings = read_from_file(sessionfile, activities=activities)
         else:
-            bookings = get_timeinfo(date=spent_on, loginfo=loginfo, activities=activities)
+            bookings = get_timeinfo(
+                date=spent_on, loginfo=loginfo, activities=activities)
         os.remove(sessionfile)
     else:
-        bookings = get_timeinfo(date=spent_on, loginfo=loginfo, activities=activities)
+        bookings = get_timeinfo(
+            date=spent_on, loginfo=loginfo, activities=activities)
 
     finished = False
     while not finished:
@@ -330,12 +352,20 @@ if __name__ == "__main__":
         book_now = raw_input('Book now? [y/N] ')
 
         if bookings and book_now.lower() == 'y':
-            write_to_file(bookings, spent_on, activities=activities, file_name=sessionfile)
+            write_to_file(
+                bookings,
+                spent_on,
+                activities=activities,
+                file_name=sessionfile)
             book_time(TimeEntry, bookings)
             os.remove(sessionfile)
             finished = True
         else:
             edit_again = raw_input('Edit again? [Y/n] ')
             if edit_again.lower() == 'n':
-                write_to_file(bookings, spent_on, activities=activities, file_name=sessionfile)
+                write_to_file(
+                    bookings,
+                    spent_on,
+                    activities=activities,
+                    file_name=sessionfile)
                 finished = True

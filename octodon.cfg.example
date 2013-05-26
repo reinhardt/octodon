@@ -1,6 +1,10 @@
 [main]
 editor = vim
 vcs = git
+source = orgmode
+
+[orgmode]
+filename = /tmp/orgtest.org
 
 [redmine]
 url = http://example.org/redmine

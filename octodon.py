@@ -1,6 +1,5 @@
 #!/usr/bin/env python
-from datetime import datetime, date, timedelta
-from hamster.client import Storage
+from datetime import datetime, timedelta
 from ConfigParser import SafeConfigParser
 import argparse
 import subprocess
@@ -22,11 +21,46 @@ ticket_pattern = re.compile('#([0-9]+)')
 ref_pattern = re.compile('    (.*)(refs |fixes )#([0-9]+)')
 
 
-def get_timeinfo(date=datetime.now(), baseurl='', loginfo={}, activities=[]):
+def get_default_activity(activities):
     default_activity = [act for act in activities
                         if act['is_default'] == 'true']
-    default_activity = default_activity and default_activity[0] or None
+    return default_activity and default_activity[0] or None
 
+
+def get_ticket_no(strings):
+    tickets = [ticket_pattern.search(s).group(1) for s in strings
+               if ticket_pattern.search(s)]
+    return len(tickets) and int(tickets[0]) or -1
+
+
+def get_timeinfo(source='hamster', date=datetime.now(), baseurl='',
+                 loginfo={}, activities=[]):
+    if source['type'] == 'hamster':
+        return get_timeinfo_hamster(date=date, baseurl=baseurl,
+                                    loginfo=loginfo, activities=activities)
+    elif source['type'] == 'orgmode':
+        if not source.get('filename'):
+            print('Please specify a source file name for org mode!')
+            sys.exit(2)
+        return get_timeinfo_orgmode(date=date, baseurl=baseurl,
+                                    loginfo=loginfo, activities=activities,
+                                    filename=source['filename'])
+
+
+def get_timeinfo_orgmode(filename, date=datetime.now(), baseurl='',
+                         loginfo={}, activities=[]):
+    bookings = read_from_file(filename, activities)
+    for booking in bookings:
+        ticket = get_ticket_no([booking['description']])
+        booking['issue_id'] = ticket
+        booking['comments'] = '; '.join(loginfo.get(ticket, []))
+    return bookings
+
+
+def get_timeinfo_hamster(date=datetime.now(), baseurl='',
+                         loginfo={}, activities=[]):
+    default_activity = get_default_activity(activities)
+    from hamster.client import Storage
     sto = Storage()
     facts = sto.get_facts(date)
     bookings = []
@@ -39,10 +73,8 @@ def get_timeinfo(date=datetime.now(), baseurl='', loginfo={}, activities=[]):
         if existing:
             existing[0]['hours'] += hours
             continue
-        tickets = [ticket_pattern.search(s).group(1) for s in
-                   fact.tags + [fact.activity] + [fact.description or '']
-                   if ticket_pattern.search(s)]
-        ticket = len(tickets) and int(tickets[0]) or -1
+        ticket = get_ticket_no(
+            fact.tags + [fact.activity] + [fact.description or ''])
         bookings.append({'issue_id': ticket,
                          'spent_on': fact.date,
                          'hours': hours,
@@ -169,6 +201,10 @@ def read_from_file(filename, activities):
     bookings = []
     spentdate = None
     activities_dict = dict([(act['name'], act) for act in activities])
+    default_activity = get_default_activity(activities)
+    print(default_activity['name'])
+    default_columns = [1, '', '0:0', default_activity['name'], -1, '']
+
     for line in data:
         if line.startswith('Clock summary at ['):
             splitdate = line[18:-2].split(' ')[0].split('-')
@@ -176,11 +212,12 @@ def read_from_file(filename, activities):
                                  int(splitdate[1]),
                                  int(splitdate[2]))
             continue
-        if not line.startswith('|') or re.match('\+(-*\+)*-*\+', line):
+        if not line.startswith('|') or re.match('^[+-|]*\n', line):
             continue
-        columns = [val.strip() for val in re.findall(' *([^|]+) *', line)]
+        columns = [val.strip() for val in re.findall(' *([^|\n]+) *', line)]
         if columns[0] in ['L', '']:
             continue
+        columns = columns + default_columns[len(columns):]
         hours, minutes = columns[2].split(':')
         spenthours = float(hours) + float(minutes) / 60.
         bookings.append({'issue_id': int(columns[4]),
@@ -211,7 +248,7 @@ if __name__ == "__main__":
     if not os.path.exists(cfgfile):
         if not os.path.exists('octodon.cfg'):
             print('No config file found! Please create %s' % cfgfile)
-            sys.exit()
+            sys.exit(1)
         config.read('octodon.cfg')
     config.read(cfgfile)
 
@@ -234,7 +271,7 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(
         description='Extract time tracking data '
-        'from hamster and book it to redmine')
+        'from hamster or emacs org mode and book it to redmine')
     parser.add_argument(
         '--date',
         type=str,
@@ -256,17 +293,30 @@ if __name__ == "__main__":
         loginfo = get_loginfo_git(date=spent_on, author=author, repos=repos,
                                   mergewith=loginfo)
 
+    source = {'type': 'hamster'}
+    if config.has_section('main') and config.has_option('main', 'source') and \
+            config.get('main', 'source') in ['hamster', 'orgmode']:
+        source['type'] = config.get('main', 'source')
+        if config.has_section(source['type']):
+            source.update(config.items(source['type']))
+
     if os.path.exists(sessionfile):
         continue_session = raw_input('Continue existing session? [Y/n] ')
         if not continue_session.lower() == 'n':
             bookings = read_from_file(sessionfile, activities=activities)
         else:
             bookings = get_timeinfo(
-                date=spent_on, loginfo=loginfo, activities=activities)
+                source=source,
+                date=spent_on,
+                loginfo=loginfo,
+                activities=activities)
         os.remove(sessionfile)
     else:
         bookings = get_timeinfo(
-            date=spent_on, loginfo=loginfo, activities=activities)
+            source=source,
+            date=spent_on,
+            loginfo=loginfo,
+            activities=activities)
 
     finished = False
     while not finished:

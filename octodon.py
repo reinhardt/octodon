@@ -33,18 +33,19 @@ def get_ticket_no(strings):
     return len(tickets) and int(tickets[0]) or -1
 
 
-def get_timeinfo(source='hamster', date=datetime.now(), baseurl='',
+def get_timeinfo(config, date=datetime.now(), baseurl='',
                  loginfo={}, activities=[]):
-    if source['type'] == 'hamster':
+    if config.get('main', 'source') == 'hamster':
         return get_timeinfo_hamster(date=date, baseurl=baseurl,
                                     loginfo=loginfo, activities=activities)
-    elif source['type'] == 'orgmode':
-        if not source.get('filename'):
+    elif config.get('main', 'source') == 'orgmode':
+        filename = config.get('orgmode', 'filename')
+        if not filename:
             print('Please specify a source file name for org mode!')
             sys.exit(2)
         return get_timeinfo_orgmode(date=date, baseurl=baseurl,
                                     loginfo=loginfo, activities=activities,
-                                    filename=source['filename'])
+                                    filename=filename)
 
 
 def get_timeinfo_orgmode(filename, date=datetime.now(), baseurl='',
@@ -120,7 +121,19 @@ def pad(string, length):
     return string + ' ' * (length - len(string))
 
 
+def make_row(entry, activities):
+    activities_dict = dict([(act['id'], act) for act in activities])
+    return ['1',
+            entry['description'],
+            format_spent_time(entry['hours']),
+            activities_dict[entry['activity_id']]['name'],
+            '%04d' % entry['issue_id'],
+            entry['comments'],
+            ]
+
+
 def make_table(rows):
+    rows = [['L', 'Headline', 'Time', 'Activity', 'iss', 'Comments']] + rows
     columns = zip(*rows)
     max_lens = [max([len(entry) for entry in column]) for column in columns]
     out_strs = []
@@ -139,12 +152,17 @@ def make_table(rows):
     return '\n'.join(out_strs)
 
 
-def print_bookings(bookings):
-    for i, b in enumerate(bookings):
-        print('[%d]' % i)
-        for key in b:
-            print('  %s: %s' % (key, b[key]))
-        print('')
+def print_summary(bookings, activities):
+    no_issue = [entry for entry in bookings if entry['issue_id'] < 0]
+    if len(no_issue) > 0:
+        rows = [make_row(entry, activities) for entry in no_issue]
+        print('Warning: No issue id for the following entries:\n'
+              '{0}'.format(make_table(rows)))
+    no_comment = [entry for entry in bookings if len(entry['comments']) <= 0]
+    if len(no_comment) > 0:
+        rows = [make_row(entry, activities) for entry in no_comment]
+        print('Warning: No comment for the following entries:\n'
+              '{0}'.format(make_table(rows)))
     print('total hours: %.2f' % get_time_sum(bookings))
 
 
@@ -159,7 +177,6 @@ def write_to_file(bookings, spent_on, activities, file_name=None):
         tmpfile = open(file_name, 'w')
     else:
         tmpfile = NamedTemporaryFile(mode='w')
-    activities_dict = dict([(act['id'], act) for act in activities])
     summary_time = min(
         datetime.now(),
         (spent_on + timedelta(1) - timedelta(0, 1)))
@@ -169,7 +186,6 @@ def write_to_file(bookings, spent_on, activities, file_name=None):
     tmpfile.write('\n')
 
     rows = []
-    rows.append(['L', 'Headline', 'Time', 'Activity', 'iss', 'Comments'])
 
     if len(bookings) == 0:
         sum = 0.
@@ -177,13 +193,7 @@ def write_to_file(bookings, spent_on, activities, file_name=None):
         sum = reduce(lambda x, y: x+y, map(lambda x: x['hours'], bookings))
     rows.append([' ', '*Total time*', '*%s*' % format_spent_time(sum), ' ',
                  ' ', ' '])
-    rows += [['1',
-              entry['description'],
-              format_spent_time(entry['hours']),
-              activities_dict[entry['activity_id']]['name'],
-              '%04d' % entry['issue_id'],
-              entry['comments'],
-              ] for entry in bookings]
+    rows += [make_row(entry, activities) for entry in bookings]
     tmpfile.write(make_table(rows))
 
     tmpfile.write('\n')
@@ -239,22 +249,31 @@ def book_time(TimeEntry, bookings):
         redmine_entry.save()
 
 
-if __name__ == "__main__":
-    cfgfile = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                           'octodon.cfg')
-    sessionfile = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                               '.octodon_session_timelog')
+def get_config(cfgfile):
     config = SafeConfigParser()
+    default_cfgfile = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                   'defaults.cfg')
+    config.readfp(open(default_cfgfile))
+
+    editor = os.environ.get('EDITOR')
+    if editor:
+        config.set('main', 'editor', editor)
+
     if not os.path.exists(cfgfile):
         if not os.path.exists('octodon.cfg'):
             print('No config file found! Please create %s' % cfgfile)
             sys.exit(1)
         config.read('octodon.cfg')
     config.read(cfgfile)
+    return config
 
-    editor = os.environ.get('EDITOR', 'vi')
-    if config.has_section('main') and config.has_option('main', 'editor'):
-        editor = config.get('main', 'editor')
+
+if __name__ == "__main__":
+    cfgfile = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                           'octodon.cfg')
+    sessionfile = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                               '.octodon_session_timelog')
+    config = get_config(cfgfile)
 
     class RedmineResource(ActiveResource):
         _site = config.get('redmine', 'url')
@@ -285,20 +304,12 @@ if __name__ == "__main__":
                                           microsecond=0)
 
     loginfo = {}
-    if config.has_section('main') and config.has_option('main', 'vcs') and \
-            'git' in config.get('main', 'vcs'):
+    if config.get('main', 'vcs') == 'git':
         author = config.get('git', 'author')
         repos = [r for r in config.get('git', 'repos').split('\n')
                  if r.strip()]
         loginfo = get_loginfo_git(date=spent_on, author=author, repos=repos,
                                   mergewith=loginfo)
-
-    source = {'type': 'hamster'}
-    if config.has_section('main') and config.has_option('main', 'source') and \
-            config.get('main', 'source') in ['hamster', 'orgmode']:
-        source['type'] = config.get('main', 'source')
-        if config.has_section(source['type']):
-            source.update(config.items(source['type']))
 
     if os.path.exists(sessionfile):
         continue_session = raw_input('Continue existing session? [Y/n] ')
@@ -306,14 +317,14 @@ if __name__ == "__main__":
             bookings = read_from_file(sessionfile, activities=activities)
         else:
             bookings = get_timeinfo(
-                source=source,
+                config=config,
                 date=spent_on,
                 loginfo=loginfo,
                 activities=activities)
         os.remove(sessionfile)
     else:
         bookings = get_timeinfo(
-            source=source,
+            config=config,
             date=spent_on,
             loginfo=loginfo,
             activities=activities)
@@ -322,11 +333,11 @@ if __name__ == "__main__":
     while not finished:
         tempfile = write_to_file(bookings, spent_on, activities)
         subprocess.check_call(
-            [editor + ' ' + tempfile.name], shell=True)
+            [config.get('main', 'editor') + ' ' + tempfile.name], shell=True)
         bookings = read_from_file(tempfile.name, activities)
         tempfile.close()
 
-        print_bookings(bookings)
+        print_summary(bookings, activities)
         book_now = raw_input('Book now? [y/N] ')
 
         if bookings and book_now.lower() == 'y':

@@ -209,7 +209,6 @@ def read_from_file(filename, activities):
     spentdate = None
     activities_dict = dict([(act['name'], act) for act in activities])
     default_activity = get_default_activity(activities)
-    print(default_activity['name'])
     default_columns = [1, '', '0:0', default_activity['name'], -1, '']
 
     for line in data:

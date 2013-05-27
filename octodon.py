@@ -153,16 +153,13 @@ def make_table(rows):
 
 
 def print_summary(bookings, activities):
-    no_issue = [entry for entry in bookings if entry['issue_id'] < 0]
-    if len(no_issue) > 0:
-        rows = [make_row(entry, activities) for entry in no_issue]
-        print('Warning: No issue id for the following entries:\n'
-              '{0}'.format(make_table(rows)))
-    no_comment = [entry for entry in bookings if len(entry['comments']) <= 0]
-    if len(no_comment) > 0:
-        rows = [make_row(entry, activities) for entry in no_comment]
-        print('Warning: No comment for the following entries:\n'
-              '{0}'.format(make_table(rows)))
+    no_issue_or_comment = [
+        entry for entry in bookings
+        if entry['issue_id'] < 0 or len(entry['comments']) <= 0]
+    if len(no_issue_or_comment) > 0:
+        rows = [make_row(entry, activities) for entry in no_issue_or_comment]
+        print('Warning: No issue id and/or comments for the following entries:'
+              '\n{0}'.format(make_table(rows)))
     print('total hours: %.2f' % get_time_sum(bookings))
 
 

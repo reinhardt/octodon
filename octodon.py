@@ -290,14 +290,20 @@ if __name__ == "__main__":
     parser.add_argument(
         '--date',
         type=str,
-        help='the date for which to extract tracking data, in format YYYYMMDD')
+        help='the date for which to extract tracking data, in format YYYYMMDD'
+        ' or as an offset in days from today, e.g. -1 for yesterday')
     args = parser.parse_args()
 
+    now = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+    spent_on = now
     if args.date:
-        spent_on = datetime.strptime(args.date, '%Y%m%d')
-    else:
-        spent_on = datetime.now().replace(hour=0, minute=0, second=0,
-                                          microsecond=0)
+        if re.match(r'[+-][0-9]*$', args.date):
+            spent_on = now + timedelta(int(args.date))
+        elif re.match(r'[0-9]{8}$', args.date):
+            spent_on = datetime.strptime(args.date, '%Y%m%d')
+        else:
+            print('error: unrecognized date format: {0}'.format(args.date))
+            exit(1)
 
     loginfo = {}
     if config.get('main', 'vcs') == 'git':
@@ -334,9 +340,9 @@ if __name__ == "__main__":
         tempfile.close()
 
         print_summary(bookings, activities)
-        book_now = raw_input('Book now? [y/N] ')
+        action = raw_input('(e)dit again/(b)ook/(q)uit? [e] ')
 
-        if bookings and book_now.lower() == 'y':
+        if bookings and action.lower() == 'b':
             write_to_file(
                 bookings,
                 spent_on,
@@ -345,12 +351,10 @@ if __name__ == "__main__":
             book_time(TimeEntry, bookings)
             os.remove(sessionfile)
             finished = True
-        else:
-            edit_again = raw_input('Edit again? [Y/n] ')
-            if edit_again.lower() == 'n':
-                write_to_file(
-                    bookings,
-                    spent_on,
-                    activities=activities,
-                    file_name=sessionfile)
-                finished = True
+        elif action.lower() == 'q':
+            write_to_file(
+                bookings,
+                spent_on,
+                activities=activities,
+                file_name=sessionfile)
+            finished = True

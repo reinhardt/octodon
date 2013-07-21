@@ -256,6 +256,8 @@ def get_config(cfgfile):
         config.set('main', 'editor', editor)
 
     if not os.path.exists(cfgfile):
+        print('Warning: config file {0} not found! Trying '
+              'octodon.cfg'.format(cfgfile))
         if not os.path.exists('octodon.cfg'):
             print('No config file found! Please create %s' % cfgfile)
             sys.exit(1)
@@ -265,8 +267,26 @@ def get_config(cfgfile):
 
 
 if __name__ == "__main__":
-    cfgfile = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                           'octodon.cfg')
+    parser = argparse.ArgumentParser(
+        description='Extract time tracking data '
+        'from hamster or emacs org mode and book it to redmine')
+    parser.add_argument(
+        '--date',
+        type=str,
+        help='the date for which to extract tracking data, in format YYYYMMDD'
+        ' or as an offset in days from today, e.g. -1 for yesterday')
+    parser.add_argument(
+        '--config-file',
+        '-c',
+        type=str,
+        help='the configuration file to use for this session')
+    args = parser.parse_args()
+
+    if args.config_file:
+        cfgfile = args.config_file
+    else:
+        cfgfile = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                               'octodon.cfg')
     sessionfile = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                '.octodon_session_timelog')
     config = get_config(cfgfile)
@@ -283,16 +303,6 @@ if __name__ == "__main__":
         pass
 
     activities = Enumerations.get('time_entry_activities')
-
-    parser = argparse.ArgumentParser(
-        description='Extract time tracking data '
-        'from hamster or emacs org mode and book it to redmine')
-    parser.add_argument(
-        '--date',
-        type=str,
-        help='the date for which to extract tracking data, in format YYYYMMDD'
-        ' or as an offset in days from today, e.g. -1 for yesterday')
-    args = parser.parse_args()
 
     now = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
     spent_on = now

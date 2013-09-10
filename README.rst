@@ -30,3 +30,9 @@ or for other dates than today
 ::
 
     python octodon.py --date=20130523
+
+Relative dates are supported as well, e.g. for the day before yesterday
+
+::
+
+    python octodon.py --date=-2

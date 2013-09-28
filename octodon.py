@@ -343,7 +343,11 @@ if __name__ == "__main__":
 
     finished = False
     while not finished:
-        tempfile = write_to_file(bookings, spent_on, activities)
+        tempfile = write_to_file(
+            bookings,
+            spent_on,
+            activities,
+            file_name=sessionfile)
         subprocess.check_call(
             [config.get('main', 'editor') + ' ' + tempfile.name], shell=True)
         bookings = read_from_file(tempfile.name, activities)
@@ -353,18 +357,8 @@ if __name__ == "__main__":
         action = raw_input('(e)dit again/(b)ook/(q)uit? [e] ')
 
         if bookings and action.lower() == 'b':
-            write_to_file(
-                bookings,
-                spent_on,
-                activities=activities,
-                file_name=sessionfile)
             book_time(TimeEntry, bookings)
             os.remove(sessionfile)
             finished = True
         elif action.lower() == 'q':
-            write_to_file(
-                bookings,
-                spent_on,
-                activities=activities,
-                file_name=sessionfile)
             finished = True

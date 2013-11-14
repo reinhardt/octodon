@@ -354,11 +354,15 @@ if __name__ == "__main__":
         tempfile.close()
 
         print_summary(bookings, activities)
-        action = raw_input('(e)dit again/(b)ook/(q)uit? [e] ')
+        action = raw_input(
+            '(e)dit again/(b)ook/(q)uit/(Q)uit and discard session? [e] ')
 
         if bookings and action.lower() == 'b':
             book_time(TimeEntry, bookings)
             os.remove(sessionfile)
             finished = True
-        elif action.lower() == 'q':
+        elif action == 'q':
             finished = True
+        elif action == 'Q':
+            finished = True
+            os.remove(sessionfile)

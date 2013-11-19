@@ -304,8 +304,12 @@ if __name__ == "__main__":
 
     activities = Enumerations.get('time_entry_activities')
 
-    now = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
-    spent_on = now
+    now = datetime.now()
+    today = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    if now.hour >= 16:
+        spent_on = today
+    else:
+        spent_on = today - timedelta(1)
     if args.date:
         if re.match(r'[+-][0-9]*$', args.date):
             spent_on = now + timedelta(int(args.date))

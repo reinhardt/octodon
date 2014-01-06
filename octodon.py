@@ -316,8 +316,10 @@ if __name__ == "__main__":
     else:
         spent_on = today - timedelta(1)
     if args.date:
-        if re.match(r'[+-][0-9]*$', args.date):
-            spent_on = now + timedelta(int(args.date))
+        if args.date == 'today':
+            spent_on = today
+        elif re.match(r'[+-][0-9]*$', args.date):
+            spent_on = today + timedelta(int(args.date))
         elif re.match(r'[0-9]{8}$', args.date):
             spent_on = datetime.strptime(args.date, '%Y%m%d')
         else:

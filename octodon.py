@@ -9,6 +9,7 @@ import sys
 import os
 import math
 from pyactiveresource.activeresource import ActiveResource
+from pyactiveresource import connection
 
 
 class Issue(ActiveResource):
@@ -24,7 +25,8 @@ ref_pattern = re.compile('    (.*)(refs |fixes )#([0-9]+)')
 def get_default_activity(activities):
     default_activity = [act for act in activities
                         if act['is_default'] == 'true']
-    return default_activity and default_activity[0] or None
+    fallback = {'id': None}
+    return default_activity and default_activity[0] or fallback
 
 
 def get_ticket_no(strings):
@@ -302,7 +304,10 @@ if __name__ == "__main__":
     class Enumerations(RedmineResource):
         pass
 
-    activities = Enumerations.get('time_entry_activities')
+    try:
+        activities = Enumerations.get('time_entry_activities')
+    except connection.Error:
+        activities = []
 
     now = datetime.now()
     today = now.replace(hour=0, minute=0, second=0, microsecond=0)

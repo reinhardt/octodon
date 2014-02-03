@@ -103,6 +103,9 @@ def get_loginfo_git(date=datetime.now(), author=None, repos=[], mergewith={}):
         args.append('--author="%s"' % author)
     logdict = mergewith
     for repo in repos:
+        if not os.path.exists(repo):
+            print("Warning: Repository path does not exist: {0}".format(repo))
+            continue
         os.chdir(repo)
         try:
             out = subprocess.check_output(' '.join(command + args), shell=True)
@@ -125,10 +128,15 @@ def pad(string, length):
 
 def make_row(entry, activities):
     activities_dict = dict([(act['id'], act) for act in activities])
+    act_id = entry['activity_id']
+    if act_id in activities_dict:
+        act_name = activities_dict[act_id].get('name', '[noname]')
+    else:
+        act_name = '[none]'
     return ['1',
             entry['description'],
             format_spent_time(entry['hours']),
-            activities_dict[entry['activity_id']]['name'],
+            act_name,
             '%04d' % entry['issue_id'],
             entry['comments'],
             ]
@@ -211,7 +219,8 @@ def read_from_file(filename, activities):
     spentdate = None
     activities_dict = dict([(act['name'], act) for act in activities])
     default_activity = get_default_activity(activities)
-    default_columns = [1, '', '0:0', default_activity['name'], -1, '']
+    default_act_name = default_activity.get('name', '[noname]')
+    default_columns = [1, '', '0:0', default_act_name, -1, '']
 
     for line in data:
         if line.startswith('Clock summary at ['):
@@ -228,12 +237,14 @@ def read_from_file(filename, activities):
         columns = columns + default_columns[len(columns):]
         hours, minutes = columns[2].split(':')
         spenthours = float(hours) + float(minutes) / 60.
+        act = activities_dict.get(columns[3])
+        act_id = act and act['id'] or None
         bookings.append({'issue_id': int(columns[4]),
                          'spent_on': spentdate.date(),
                          'hours': float(spenthours),
                          'comments': columns[5],
                          'description': columns[1],
-                         'activity_id': activities_dict[columns[3]]['id'],
+                         'activity_id': act_id,
                         })
     return bookings
 

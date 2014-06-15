@@ -19,7 +19,7 @@ class Issue(ActiveResource):
 
 
 ticket_pattern = re.compile('#([0-9]+)')
-ref_pattern = re.compile('    (.*)(refs |fixes )#([0-9]+)')
+ref_pattern = re.compile('(?:    )?(.*?)([Rr]efs |[Ff]ixes )?#([0-9]+)')
 
 
 def get_default_activity(activities):
@@ -92,15 +92,11 @@ def extract_loginfo(log, mergewith={}):
     logdict = mergewith
     for match in matches:
         logdict.setdefault(int(match.group(3)),
-                           []).append(match.group(1).strip(' ,'))
+                           []).append(match.group(1).strip(' ,').strip(' .'))
     return logdict
 
 
-def get_loginfo_git(date=datetime.now(), author=None, repos=[], mergewith={}):
-    command = ['/usr/bin/git', '--no-pager', 'log', '--all', '--reverse']
-    args = ['--since="{%s}"' % date, '--until="{%s}"' % (date + timedelta(1))]
-    if author:
-        args.append('--author="%s"' % author)
+def _get_loginfo(command, args, repos=[], mergewith={}):
     logdict = mergewith
     for repo in repos:
         if not os.path.exists(repo):
@@ -110,10 +106,40 @@ def get_loginfo_git(date=datetime.now(), author=None, repos=[], mergewith={}):
         try:
             out = subprocess.check_output(' '.join(command + args), shell=True)
         except subprocess.CalledProcessError as cpe:
-            print('git returned %d: %s' % (cpe.returncode, cpe.output))
+            print('%s returned %d: %s' % (command, cpe.returncode, cpe.output))
             continue
         logdict = extract_loginfo(out, logdict)
     return logdict
+
+
+def get_loginfo(vcs, date=datetime.now(), author=None, repos=[], mergewith={}):
+    if vcs == 'git':
+        return get_loginfo_git(
+            date=date, author=author, repos=repos, mergewith=mergewith)
+    elif vcs == 'svn':
+        return get_loginfo_svn(
+            date=date, author=author, repos=repos, mergewith=mergewith)
+    else:
+        print('Unrecognized vcs: %s' % vcs)
+        return mergewith
+
+
+def get_loginfo_git(date=datetime.now(), author=None, repos=[], mergewith={}):
+    command = ['/usr/bin/git', '--no-pager', 'log', '--all', '--reverse']
+    args = ['--since="{%s}"' % date, '--until="{%s}"' % (date + timedelta(1))]
+    if author:
+        args.append('--author="%s"' % author)
+    return _get_loginfo(
+        command=command, args=args, repos=repos, mergewith=mergewith)
+
+
+def get_loginfo_svn(date=datetime.now(), author=None, repos=[], mergewith={}):
+    command = ['/usr/bin/svn', 'log']
+    args = ['-r "{%s}:{%s}"' % (date, date + timedelta(1))]
+    if author:
+        args.append('--search="%s"' % author)
+    return _get_loginfo(
+        command=command, args=args, repos=repos, mergewith=mergewith)
 
 
 def format_spent_time(time):
@@ -338,12 +364,20 @@ if __name__ == "__main__":
             exit(1)
 
     loginfo = {}
-    if config.get('main', 'vcs') == 'git':
-        author = config.get('git', 'author')
-        repos = [r for r in config.get('git', 'repos').split('\n')
-                 if r.strip()]
-        loginfo = get_loginfo_git(date=spent_on, author=author, repos=repos,
-                                  mergewith=loginfo)
+    for vcs in config.get('main', 'vcs').split('\n'):
+        if not vcs:
+            continue
+        if not config.has_section(vcs):
+            continue
+        author = None
+        repos = []
+        if config.has_option(vcs, 'author'):
+            author = config.get(vcs, 'author')
+        if config.has_option(vcs, 'repos'):
+            repos = [r for r in config.get(vcs, 'repos').split('\n')
+                     if r.strip()]
+        loginfo = get_loginfo(
+            vcs, date=spent_on, author=author, repos=repos, mergewith=loginfo)
 
     if os.path.exists(sessionfile):
         continue_session = raw_input('Continue existing session? [Y/n] ')

@@ -1,6 +1,8 @@
 [main]
 editor = vim
-vcs = git
+vcs =
+    git
+    svn
 source = orgmode
 
 [orgmode]
@@ -14,4 +16,9 @@ pass = secret
 [git]
 author = me@example.com
 repos =
-    /home/me/myrepo
+    /home/me/mygitrepo
+
+[svn]
+author = me@example.com
+repos =
+    /home/me/mysvnrepo

@@ -414,9 +414,16 @@ if __name__ == "__main__":
             '(e)dit again/(b)ook/(q)uit/(Q)uit and discard session? [e] ')
 
         if bookings and action.lower() == 'b':
-            book_time(TimeEntry, bookings)
-            os.remove(sessionfile)
-            finished = True
+            try:
+                book_time(TimeEntry, bookings)
+            except Exception as e:
+                print('Error while booking - comments too long? Error was: '
+                      '%s: %s' % (e.__class__.__name__, e))
+                raw_input('Press return')
+                finished = False
+            else:
+                os.remove(sessionfile)
+                finished = True
         elif action == 'q':
             finished = True
         elif action == 'Q':

@@ -19,7 +19,8 @@ class Issue(ActiveResource):
 
 
 ticket_pattern = re.compile('#([0-9]+)')
-ref_pattern = re.compile('(?:    )?(.*?)([Rr]efs |[Ff]ixes )?#([0-9]+)')
+ref_pattern = re.compile('(?:    )?(.*)#([0-9]+)')
+ref_keyword_pattern = re.compile('([Rr]efs |[Ff]ixes )')
 
 
 def get_default_activity(activities):
@@ -91,8 +92,9 @@ def extract_loginfo(log, mergewith={}):
     matches = ref_pattern.finditer(log) or []
     logdict = mergewith
     for match in matches:
-        logdict.setdefault(int(match.group(3)),
-                           []).append(match.group(1).strip(' ,').strip(' .'))
+        comment = ref_keyword_pattern.sub('', match.group(1))
+        comment = comment.strip(' ,').strip(' .')
+        logdict.setdefault(int(match.group(2)), []).append(comment)
     return logdict
 
 
@@ -108,7 +110,12 @@ def _get_loginfo(command, args, repos=[], mergewith={}):
         except subprocess.CalledProcessError as cpe:
             print('%s returned %d: %s' % (command, cpe.returncode, cpe.output))
             continue
-        logdict = extract_loginfo(out, logdict)
+        log = '\n'.join([re.sub(
+            '^([A-Za-z]*:\s*.*\n)*', '', entry).replace(
+                '\n    ', ' ').strip()
+            for entry in re.split('^commit [a-z0-9]*\n', out)
+            if entry])
+        logdict = extract_loginfo(log, logdict)
     return logdict
 
 
@@ -125,7 +132,7 @@ def get_loginfo(vcs, date=datetime.now(), author=None, repos=[], mergewith={}):
 
 
 def get_loginfo_git(date=datetime.now(), author=None, repos=[], mergewith={}):
-    command = ['/usr/bin/git', '--no-pager', 'log', '--all', '--reverse']
+    command = ['/usr/bin/git', '--no-pager', '-c', 'color.diff=false', 'log', '--all', '--reverse']
     args = ['--since="{%s}"' % date, '--until="{%s}"' % (date + timedelta(1))]
     if author:
         args.append('--author="%s"' % author)

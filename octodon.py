@@ -312,6 +312,30 @@ def get_config(cfgfile):
     return config
 
 
+def get_bookings(config, spent_on):
+    loginfo = {}
+    for vcs in config.get('main', 'vcs').split('\n'):
+        if not vcs:
+            continue
+        if not config.has_section(vcs):
+            continue
+        author = None
+        repos = []
+        if config.has_option(vcs, 'author'):
+            author = config.get(vcs, 'author')
+        if config.has_option(vcs, 'repos'):
+            repos = [r for r in config.get(vcs, 'repos').split('\n')
+                     if r.strip()]
+        loginfo = get_loginfo(
+            vcs, date=spent_on, author=author, repos=repos, mergewith=loginfo)
+    bookings = get_timeinfo(
+        config=config,
+        date=spent_on,
+        loginfo=loginfo,
+        activities=activities)
+    return bookings
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description='Extract time tracking data '
@@ -370,39 +394,15 @@ if __name__ == "__main__":
             print('error: unrecognized date format: {0}'.format(args.date))
             exit(1)
 
-    loginfo = {}
-    for vcs in config.get('main', 'vcs').split('\n'):
-        if not vcs:
-            continue
-        if not config.has_section(vcs):
-            continue
-        author = None
-        repos = []
-        if config.has_option(vcs, 'author'):
-            author = config.get(vcs, 'author')
-        if config.has_option(vcs, 'repos'):
-            repos = [r for r in config.get(vcs, 'repos').split('\n')
-                     if r.strip()]
-        loginfo = get_loginfo(
-            vcs, date=spent_on, author=author, repos=repos, mergewith=loginfo)
-
     if os.path.exists(sessionfile):
         continue_session = raw_input('Continue existing session? [Y/n] ')
         if not continue_session.lower() == 'n':
             bookings = read_from_file(sessionfile, activities=activities)
         else:
-            bookings = get_timeinfo(
-                config=config,
-                date=spent_on,
-                loginfo=loginfo,
-                activities=activities)
+            bookings = get_bookings(config, spent_on)
         os.remove(sessionfile)
     else:
-        bookings = get_timeinfo(
-            config=config,
-            date=spent_on,
-            loginfo=loginfo,
-            activities=activities)
+        bookings = get_bookings(config, spent_on)
 
     finished = False
     while not finished:

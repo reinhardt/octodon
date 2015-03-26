@@ -58,6 +58,7 @@ def get_timeinfo_orgmode(filename, date=datetime.now(), baseurl='',
         ticket = get_ticket_no([booking['description']])
         booking['issue_id'] = ticket
         booking['comments'] = '; '.join(loginfo.get(ticket, []))
+        booking['project'] = ''
     return bookings
 
 
@@ -83,8 +84,9 @@ def get_timeinfo_hamster(date=datetime.now(), baseurl='',
                          'spent_on': fact.date,
                          'hours': hours,
                          'description': fact.activity,
-                         'activity_id': default_activity['id'],
-                         'comments': '; '.join(loginfo.get(ticket, []))})
+                         'activity': default_activity['name'],
+                         'comments': '; '.join(loginfo.get(ticket, [])),
+                         'project': ''})
     return bookings
 
 
@@ -160,23 +162,19 @@ def pad(string, length):
 
 
 def make_row(entry, activities):
-    activities_dict = dict([(act['id'], act) for act in activities])
-    act_id = entry['activity_id']
-    if act_id in activities_dict:
-        act_name = activities_dict[act_id].get('name', '[noname]')
-    else:
-        act_name = '[none]'
+    act_name = entry['activity']
     return ['1',
             entry['description'],
             format_spent_time(entry['hours']),
             act_name,
             '%04d' % entry['issue_id'],
+            entry['project'],
             entry['comments'],
             ]
 
 
 def make_table(rows):
-    rows = [['L', 'Headline', 'Time', 'Activity', 'iss', 'Comments']] + rows
+    rows = [['L', 'Headline', 'Time', 'Activity', 'iss', 'Project', 'Comments']] + rows
     columns = zip(*rows)
     max_lens = [max([len(entry) for entry in column]) for column in columns]
     out_strs = []
@@ -232,7 +230,7 @@ def write_to_file(bookings, spent_on, activities, file_name=None):
     else:
         sum = reduce(lambda x, y: x+y, map(lambda x: x['hours'], bookings))
     rows.append([' ', '*Total time*', '*%s*' % format_spent_time(sum), ' ',
-                 ' ', ' '])
+                 ' ', ' ', ' '])
     rows += [make_row(entry, activities) for entry in bookings]
     tmpfile.write(make_table(rows))
 
@@ -250,10 +248,9 @@ def read_from_file(filename, activities):
     tmpfile.close()
     bookings = []
     spentdate = None
-    activities_dict = dict([(act['name'], act) for act in activities])
     default_activity = get_default_activity(activities)
     default_act_name = default_activity.get('name', '[noname]')
-    default_columns = [1, '', '0:0', default_act_name, -1, '']
+    default_columns = [1, '', '0:0', default_act_name, -1, '', '']
 
     for line in data:
         if line.startswith('Clock summary at ['):
@@ -270,25 +267,49 @@ def read_from_file(filename, activities):
         columns = columns + default_columns[len(columns):]
         hours, minutes = columns[2].split(':')
         spenthours = float(hours) + float(minutes) / 60.
-        act = activities_dict.get(columns[3])
-        act_id = act and act['id'] or None
         bookings.append({'issue_id': int(columns[4]),
                          'spent_on': spentdate.date(),
                          'hours': float(spenthours),
-                         'comments': columns[5],
+                         'comments': columns[6],
+                         'project': columns[5],
                          'description': columns[1],
-                         'activity_id': act_id,
-                        })
+                         'activity': columns[3],
+                         })
     return bookings
 
 
-def book_time(TimeEntry, bookings):
+def book_time(TimeEntry, bookings, activities):
     for entry in bookings:
         rm_entry = entry.copy()
+
+        activities_dict = dict([(act['name'], act) for act in activities])
+        act = activities_dict.get(entry['activity'])
+        rm_entry['activity_id'] = act and act['id'] or None
+
         if 'description' in rm_entry:
             del rm_entry['description']
+
         redmine_entry = TimeEntry(rm_entry)
         redmine_entry.save()
+
+
+def book_harvest(harvest, bookings):
+    projects = harvest.get_day()['projects']
+    projects_lookup = dict(
+        [(project[u'name'], project) for project in projects])
+    for entry in bookings:
+        project = projects_lookup.get(entry['project'])
+        project_id = project and project[u'id'] or -1
+        tasks_lookup = dict(
+            [(task[u'name'], task) for task in project[u'tasks']])
+        task = tasks_lookup.get(entry['activity'])
+        task_id = task and task[u'id'] or -1
+        harvest.add({'notes': entry['comments'],
+                     'project_id': project_id,
+                     'hours': str(entry['hours']),
+                     'task_id': task_id,
+                     'spent_at': entry['spent_on'],
+                     })
 
 
 def get_config(cfgfile):
@@ -405,34 +426,53 @@ if __name__ == "__main__":
         bookings = get_bookings(config, spent_on)
 
     finished = False
+    edit = True
     while not finished:
-        tempfile = write_to_file(
-            bookings,
-            spent_on,
-            activities,
-            file_name=sessionfile)
-        subprocess.check_call(
-            [config.get('main', 'editor') + ' ' + tempfile.name], shell=True)
-        bookings = read_from_file(tempfile.name, activities)
-        tempfile.close()
+        if edit:
+            tempfile = write_to_file(
+                bookings,
+                spent_on,
+                activities,
+                file_name=sessionfile)
+            subprocess.check_call(
+                [config.get('main', 'editor') + ' ' + tempfile.name],
+                shell=True)
+            bookings = read_from_file(tempfile.name, activities)
+            tempfile.close()
 
         print_summary(bookings, activities)
         action = raw_input(
-            '(e)dit again/(b)ook/(q)uit/(Q)uit and discard session? [e] ')
+            '(e)dit again/book (r)edmine/book (h)arvest/(b)ook all/'
+            '(q)uit/(Q)uit and discard session? [e] ')
 
-        if bookings and action.lower() == 'b':
+        if bookings and action.lower() in ['b', 'r']:
             try:
-                book_time(TimeEntry, bookings)
+                book_time(TimeEntry, bookings, activities)
             except Exception as e:
                 print('Error while booking - comments too long? Error was: '
                       '%s: %s' % (e.__class__.__name__, e))
                 raw_input('Press return')
-                finished = False
             else:
-                os.remove(sessionfile)
-                finished = True
-        elif action == 'q':
+                edit = False
+        if bookings and action.lower() in ['b', 'h']:
+            from harvest import Harvest
+            harvest = Harvest(
+                config.get('harvest', 'url'),
+                config.get('harvest', 'user'),
+                config.get('harvest', 'pass'))
+            try:
+                book_harvest(harvest, bookings)
+            except Exception as e:
+                print('Error while booking - '
+                      '%s: %s' % (e.__class__.__name__, e))
+                raw_input('Press return')
+            else:
+                edit = False
+
+        if action == 'e':
+            edit = True
+        if action == 'q':
             finished = True
-        elif action == 'Q':
+        if action == 'Q':
             finished = True
             os.remove(sessionfile)

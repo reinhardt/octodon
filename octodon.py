@@ -9,13 +9,8 @@ import sys
 import os
 import math
 from pyactiveresource.activeresource import ActiveResource
+from pyactiveresource.connection import ResourceNotFound
 from pyactiveresource import connection
-
-
-class Issue(ActiveResource):
-    _site = None
-    _user = None
-    _password = None
 
 
 ticket_pattern = re.compile('#([0-9]+)')
@@ -34,6 +29,44 @@ def get_ticket_no(strings):
     tickets = [ticket_pattern.search(s).group(1) for s in strings
                if ticket_pattern.search(s)]
     return len(tickets) and int(tickets[0]) or -1
+
+
+harvest_task_map = {
+    'Support': 'Development',
+    'Feature': 'Development',
+    'Bug': 'Bugfixing',
+}
+
+
+def redmine_harvest_mapping(harvest_projects, project=None, tracker=None):
+    if tracker == 'Support' or tracker == 'Feature':
+        task = 'Development'
+    elif tracker == 'Bug':
+        task = 'Bugfixing'
+    else:
+        task = ''
+    task = harvest_task_map[tracker]
+    harvest_project = ''
+    if project in harvest_projects:
+        harvest_project = project
+    else:
+        part_matches = [
+            proj for proj in harvest_projects
+            if project in proj]
+        if part_matches:
+            harvest_project = part_matches[0]
+    return (harvest_project, task)
+
+
+def get_harvest_target(issue_no, Issue, harvest_projects, redmine_harvest_mapping):
+    try:
+        issue = Issue.get(issue_no)
+    except ResourceNotFound:
+        return ('', '')
+    return redmine_harvest_mapping(
+        harvest_projects,
+        project=issue['project']['name'],
+        tracker=issue['tracker']['name'])
 
 
 def get_timeinfo(config, date=datetime.now(), baseurl='',
@@ -278,16 +311,19 @@ def read_from_file(filename, activities):
     return bookings
 
 
-def book_time(TimeEntry, bookings, activities):
+def book_redmine(TimeEntry, bookings, activities):
+    default_activity = get_default_activity(activities)
     for entry in bookings:
         rm_entry = entry.copy()
 
         activities_dict = dict([(act['name'], act) for act in activities])
         act = activities_dict.get(entry['activity'])
-        rm_entry['activity_id'] = act and act['id'] or None
+        rm_entry['activity_id'] = act and act['id'] or default_activity['id']
 
         if 'description' in rm_entry:
             del rm_entry['description']
+        if 'activity' in rm_entry:
+            del rm_entry['activity']
 
         redmine_entry = TimeEntry(rm_entry)
         redmine_entry.save()
@@ -298,13 +334,13 @@ def book_harvest(harvest, bookings):
     projects_lookup = dict(
         [(project[u'name'], project) for project in projects])
     for entry in bookings:
-        project = projects_lookup.get(entry['project'])
+        project = projects_lookup[entry['project']]
         project_id = project and project[u'id'] or -1
         tasks_lookup = dict(
             [(task[u'name'], task) for task in project[u'tasks']])
         task = tasks_lookup.get(entry['activity'])
         task_id = task and task[u'id'] or -1
-        harvest.add({'notes': entry['comments'],
+        harvest.add({'notes': entry['comments'] + ' #' + str(entry['issue_id']),
                      'project_id': project_id,
                      'hours': str(entry['hours']),
                      'task_id': task_id,
@@ -333,7 +369,7 @@ def get_config(cfgfile):
     return config
 
 
-def get_bookings(config, spent_on):
+def get_bookings(config, Issue, harvest, spent_on):
     loginfo = {}
     for vcs in config.get('main', 'vcs').split('\n'):
         if not vcs:
@@ -354,6 +390,17 @@ def get_bookings(config, spent_on):
         date=spent_on,
         loginfo=loginfo,
         activities=activities)
+    if harvest is not None:
+        projects = harvest.get_day()['projects']
+        harvest_projects = [project[u'name'] for project in projects]
+        for entry in bookings:
+            project, task = get_harvest_target(
+                entry['issue_id'],
+                Issue,
+                harvest_projects,
+                redmine_harvest_mapping)
+            entry['project'] = project
+            entry['activity'] = task
     return bookings
 
 
@@ -393,6 +440,9 @@ if __name__ == "__main__":
     class Enumerations(RedmineResource):
         pass
 
+    class Issue(RedmineResource):
+        pass
+
     try:
         activities = Enumerations.get('time_entry_activities')
     except connection.Error:
@@ -415,15 +465,24 @@ if __name__ == "__main__":
             print('error: unrecognized date format: {0}'.format(args.date))
             exit(1)
 
+    if config.has_section('harvest'):
+        from harvest import Harvest
+        harvest = Harvest(
+            config.get('harvest', 'url'),
+            config.get('harvest', 'user'),
+            config.get('harvest', 'pass'))
+    else:
+        harvest = None
+
     if os.path.exists(sessionfile):
         continue_session = raw_input('Continue existing session? [Y/n] ')
         if not continue_session.lower() == 'n':
             bookings = read_from_file(sessionfile, activities=activities)
         else:
-            bookings = get_bookings(config, spent_on)
+            bookings = get_bookings(config, Issue, harvest, spent_on)
         os.remove(sessionfile)
     else:
-        bookings = get_bookings(config, spent_on)
+        bookings = get_bookings(config, Issue, harvest, spent_on)
 
     finished = False
     edit = True
@@ -447,32 +506,23 @@ if __name__ == "__main__":
 
         if bookings and action.lower() in ['b', 'r']:
             try:
-                book_time(TimeEntry, bookings, activities)
+                book_redmine(TimeEntry, bookings, activities)
             except Exception as e:
                 print('Error while booking - comments too long? Error was: '
                       '%s: %s' % (e.__class__.__name__, e))
-                raw_input('Press return')
-            else:
-                edit = False
+            edit = False
         if bookings and action.lower() in ['b', 'h']:
-            from harvest import Harvest
-            harvest = Harvest(
-                config.get('harvest', 'url'),
-                config.get('harvest', 'user'),
-                config.get('harvest', 'pass'))
             try:
                 book_harvest(harvest, bookings)
             except Exception as e:
                 print('Error while booking - '
                       '%s: %s' % (e.__class__.__name__, e))
-                raw_input('Press return')
-            else:
-                edit = False
+            edit = False
 
-        if action == 'e':
-            edit = True
         if action == 'q':
             finished = True
         if action == 'Q':
             finished = True
             os.remove(sessionfile)
+        if action == 'e' or action == '':
+            edit = True

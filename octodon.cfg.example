@@ -13,6 +13,11 @@ url = http://example.org/redmine
 user = me@example.org
 pass = secret
 
+[harvest]
+url = https://example.harvestapp.com/
+user = me@example.org
+pass = secret
+
 [git]
 author = me@example.com
 repos =

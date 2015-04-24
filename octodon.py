@@ -34,6 +34,7 @@ def get_ticket_no(strings):
 harvest_task_map = {
     'Support': 'Development',
     'Feature': 'Development',
+    'Tasks': 'Development',
     'Bug': 'Bugfixing',
 }
 
@@ -45,7 +46,7 @@ def redmine_harvest_mapping(harvest_projects, project=None, tracker=None):
         task = 'Bugfixing'
     else:
         task = ''
-    task = harvest_task_map[tracker]
+    task = harvest_task_map.get(tracker, 'Development')
     harvest_project = ''
     if project in harvest_projects:
         harvest_project = project
@@ -59,9 +60,13 @@ def redmine_harvest_mapping(harvest_projects, project=None, tracker=None):
 
 
 def get_harvest_target(issue_no, Issue, harvest_projects, redmine_harvest_mapping):
-    try:
-        issue = Issue.get(issue_no)
-    except ResourceNotFound:
+    if issue_no > 0:
+        try:
+            issue = Issue.get(issue_no)
+        except (ResourceNotFound, connection.Error):
+            print('Could not find issue ' + str(issue_no))
+            return ('', '')
+    else:
         return ('', '')
     return redmine_harvest_mapping(
         harvest_projects,
@@ -117,7 +122,7 @@ def get_timeinfo_hamster(date=datetime.now(), baseurl='',
                          'spent_on': fact.date,
                          'hours': hours,
                          'description': fact.activity,
-                         'activity': default_activity['name'],
+                         'activity': default_activity.get('name', 'none'),
                          'comments': '; '.join(loginfo.get(ticket, [])),
                          'project': ''})
     return bookings
@@ -391,7 +396,12 @@ def get_bookings(config, Issue, harvest, spent_on):
         loginfo=loginfo,
         activities=activities)
     if harvest is not None:
-        projects = harvest.get_day()['projects']
+        try:
+            projects = harvest.get_day()['projects']
+        except Exception as e:
+            print('Could not get harvest projects: {0}: {1}'.format(
+                e.__class__.__name__, e))
+            projects = []
         harvest_projects = [project[u'name'] for project in projects]
         for entry in bookings:
             project, task = get_harvest_target(

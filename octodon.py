@@ -53,13 +53,14 @@ def redmine_harvest_mapping(harvest_projects, project=None, tracker=None):
     else:
         part_matches = [
             proj for proj in harvest_projects
-            if project in proj]
+            if project.lower() in proj.lower()]
         if part_matches:
             harvest_project = part_matches[0]
     return (harvest_project, task)
 
 
-def get_harvest_target(issue_no, Issue, harvest_projects, redmine_harvest_mapping):
+def get_harvest_target(entry, Issue, harvest_projects, redmine_harvest_mapping):
+    issue_no = entry['issue_id']
     if issue_no > 0:
         try:
             issue = Issue.get(issue_no)
@@ -68,9 +69,18 @@ def get_harvest_target(issue_no, Issue, harvest_projects, redmine_harvest_mappin
             return ('', '')
     else:
         return ('', '')
+
+    project = issue['project']['name']
+
+    for tag in entry['tags']:
+        if tag in harvest_projects:
+            project = str(tag)
+    if entry['category'] in harvest_projects:
+        project = entry['category']
+
     return redmine_harvest_mapping(
         harvest_projects,
-        project=issue['project']['name'],
+        project=project,
         tracker=issue['tracker']['name'])
 
 
@@ -124,6 +134,8 @@ def get_timeinfo_hamster(date=datetime.now(), baseurl='',
                          'description': fact.activity,
                          'activity': default_activity.get('name', 'none'),
                          'comments': '; '.join(loginfo.get(ticket, [])),
+                         'category': fact.category,
+                         'tags': fact.tags,
                          'project': ''})
     return bookings
 
@@ -405,7 +417,7 @@ def get_bookings(config, Issue, harvest, spent_on):
         harvest_projects = [project[u'name'] for project in projects]
         for entry in bookings:
             project, task = get_harvest_target(
-                entry['issue_id'],
+                entry,
                 Issue,
                 harvest_projects,
                 redmine_harvest_mapping)

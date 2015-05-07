@@ -61,16 +61,16 @@ def redmine_harvest_mapping(harvest_projects, project=None, tracker=None):
 
 def get_harvest_target(entry, Issue, harvest_projects, redmine_harvest_mapping):
     issue_no = entry['issue_id']
+    issue = None
+    project = ''
     if issue_no > 0:
         try:
             issue = Issue.get(issue_no)
         except (ResourceNotFound, connection.Error):
             print('Could not find issue ' + str(issue_no))
-            return ('', '')
-    else:
-        return ('', '')
 
-    project = issue['project']['name']
+    if issue is not None:
+        project = issue['project']['name']
 
     for tag in entry['tags']:
         if tag in harvest_projects:
@@ -331,6 +331,10 @@ def read_from_file(filename, activities):
 def book_redmine(TimeEntry, bookings, activities):
     default_activity = get_default_activity(activities)
     for entry in bookings:
+        if entry['issue_id'] <= 0:
+            print("No valid issue id, skipping entry (%s)" %
+                  entry['description'])
+            continue
         rm_entry = entry.copy()
 
         activities_dict = dict([(act['name'], act) for act in activities])

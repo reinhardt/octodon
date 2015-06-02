@@ -78,10 +78,12 @@ def get_harvest_target(entry, Issue, harvest_projects, redmine_harvest_mapping):
     if entry['category'] in harvest_projects:
         project = entry['category']
 
+    tracker = issue and issue['tracker']['name']
+
     return redmine_harvest_mapping(
         harvest_projects,
         project=project,
-        tracker=issue['tracker']['name'])
+        tracker=tracker)
 
 
 def get_timeinfo(config, date=datetime.now(), baseurl='',

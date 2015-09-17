@@ -39,7 +39,7 @@ harvest_task_map = {
 }
 
 
-def redmine_harvest_mapping(harvest_projects, project=None, tracker=None):
+def redmine_harvest_mapping(harvest_projects, project=None, tracker=None, contracts=[]):
     if tracker == 'Support' or tracker == 'Feature':
         task = 'Development'
     elif tracker == 'Bug':
@@ -56,6 +56,16 @@ def redmine_harvest_mapping(harvest_projects, project=None, tracker=None):
             if project.lower() in proj.lower()]
         if part_matches:
             harvest_project = part_matches[0]
+    if not harvest_project:
+        for contract in contracts:
+            if contract in harvest_projects:
+                harvest_project = contract
+                break
+            part_matches = [
+                proj for proj in harvest_projects
+                if contract.lower() in proj.lower()]
+            if part_matches:
+                harvest_project = part_matches[0]
     return (harvest_project, task)
 
 
@@ -63,6 +73,7 @@ def get_harvest_target(entry, Issue, harvest_projects, redmine_harvest_mapping):
     issue_no = entry['issue_id']
     issue = None
     project = ''
+    contracts = []
     if issue_no > 0:
         try:
             issue = Issue.get(issue_no)
@@ -71,6 +82,8 @@ def get_harvest_target(entry, Issue, harvest_projects, redmine_harvest_mapping):
 
     if issue is not None:
         project = issue['project']['name']
+        contracts = [f['value'] for f in issue['custom_fields'] if
+                     f['name'].startswith('Contracts')]
 
     for tag in entry['tags']:
         if tag in harvest_projects:
@@ -83,7 +96,8 @@ def get_harvest_target(entry, Issue, harvest_projects, redmine_harvest_mapping):
     return redmine_harvest_mapping(
         harvest_projects,
         project=project,
-        tracker=tracker)
+        tracker=tracker,
+        contracts=contracts)
 
 
 def get_timeinfo(config, date=datetime.now(), baseurl='',

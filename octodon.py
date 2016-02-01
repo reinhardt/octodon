@@ -15,7 +15,7 @@ from pyactiveresource import connection
 
 ticket_pattern = re.compile('#([0-9]+)')
 ref_pattern = re.compile('(?:    )?(.*)#([0-9]+)')
-ref_keyword_pattern = re.compile('([Rr]efs |[Ff]ixes )')
+ref_keyword_pattern = re.compile('([Rr]efs |[Ff]ixes )$')
 
 
 def get_default_activity(activities):
@@ -39,14 +39,10 @@ harvest_task_map = {
 }
 
 
-def redmine_harvest_mapping(harvest_projects, project=None, tracker=None, contracts=[]):
-    if tracker == 'Support' or tracker == 'Feature':
-        task = 'Development'
-    elif tracker == 'Bug':
-        task = 'Bugfixing'
-    else:
-        task = ''
+def redmine_harvest_mapping(harvest_projects, project=None, tracker=None, contracts=[], description=''):
     task = harvest_task_map.get(tracker, 'Development')
+    if 'scrum' in description.lower():
+        task = 'SCRUM Meetings'
     harvest_project = ''
     if project in harvest_projects:
         harvest_project = project
@@ -97,7 +93,8 @@ def get_harvest_target(entry, Issue, harvest_projects, redmine_harvest_mapping):
         harvest_projects,
         project=project,
         tracker=tracker,
-        contracts=contracts)
+        contracts=contracts,
+        description=entry['description'])
 
 
 def get_timeinfo(config, date=datetime.now(), baseurl='',
@@ -143,7 +140,7 @@ def get_timeinfo_hamster(date=datetime.now(), baseurl='',
             existing[0]['hours'] += hours
             continue
         ticket = get_ticket_no(
-            fact.tags + [fact.activity] + [fact.description or ''])
+            ['#' + tag for tag in fact.tags] + [fact.activity] + [fact.description or ''])
         bookings.append({'issue_id': ticket,
                          'spent_on': fact.date,
                          'hours': hours,
@@ -200,7 +197,7 @@ def get_loginfo(vcs, date=datetime.now(), author=None, repos=[], mergewith={}):
 
 
 def get_loginfo_git(date=datetime.now(), author=None, repos=[], mergewith={}):
-    command = ['/usr/bin/git', '--no-pager', '-c', 'color.diff=false', 'log', '--all', '--reverse']
+    command = ['/usr/bin/git', '--no-pager', '-c', 'color.diff=false', 'log', '--branches', '--reverse']
     args = ['--since="{%s}"' % date, '--until="{%s}"' % (date + timedelta(1))]
     if author:
         args.append('--author="%s"' % author)
@@ -267,7 +264,9 @@ def print_summary(bookings, activities):
         rows = [make_row(entry, activities) for entry in no_issue_or_comment]
         print('Warning: No issue id and/or comments for the following entries:'
               '\n{0}'.format(make_table(rows)))
-    print('total hours: %.2f' % get_time_sum(bookings))
+    total_hours = get_time_sum(bookings)
+    print('total hours: %.2f (%d:%d)' % (
+        total_hours, int(total_hours), (total_hours - int(total_hours)) * 60.))
 
 
 def get_time_sum(bookings):

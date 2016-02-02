@@ -19,11 +19,13 @@ user = me@example.org
 pass = secret
 
 [git]
+executable = /usr/bin/git
 author = me@example.com
 repos =
     /home/me/mygitrepo
 
 [svn]
+executable = /usr/bin/svn
 author = me@example.com
 repos =
     /home/me/mysvnrepo

@@ -20,7 +20,7 @@ ref_keyword_pattern = re.compile('([Rr]efs |[Ff]ixes )$')
 
 def get_default_activity(activities):
     default_activity = [act for act in activities
-                        if act['is_default'] == 'true']
+                        if act.get('is_default', False)]
     fallback = {'id': None}
     return default_activity and default_activity[0] or fallback
 
@@ -184,20 +184,20 @@ def _get_loginfo(command, args, repos=[], mergewith={}):
     return logdict
 
 
-def get_loginfo(vcs, date=datetime.now(), author=None, repos=[], mergewith={}):
+def get_loginfo(vcs, exe, date=datetime.now(), author=None, repos=[], mergewith={}):
     if vcs == 'git':
         return get_loginfo_git(
-            date=date, author=author, repos=repos, mergewith=mergewith)
+            exe, date=date, author=author, repos=repos, mergewith=mergewith)
     elif vcs == 'svn':
         return get_loginfo_svn(
-            date=date, author=author, repos=repos, mergewith=mergewith)
+            exe, date=date, author=author, repos=repos, mergewith=mergewith)
     else:
         print('Unrecognized vcs: %s' % vcs)
         return mergewith
 
 
-def get_loginfo_git(date=datetime.now(), author=None, repos=[], mergewith={}):
-    command = ['/usr/bin/git', '--no-pager', '-c', 'color.diff=false', 'log', '--branches', '--reverse']
+def get_loginfo_git(exe, date=datetime.now(), author=None, repos=[], mergewith={}):
+    command = [exe, '--no-pager', '-c', 'color.diff=false', 'log', '--branches', '--reverse']
     args = ['--since="{%s}"' % date, '--until="{%s}"' % (date + timedelta(1))]
     if author:
         args.append('--author="%s"' % author)
@@ -205,8 +205,8 @@ def get_loginfo_git(date=datetime.now(), author=None, repos=[], mergewith={}):
         command=command, args=args, repos=repos, mergewith=mergewith)
 
 
-def get_loginfo_svn(date=datetime.now(), author=None, repos=[], mergewith={}):
-    command = ['/usr/bin/svn', 'log']
+def get_loginfo_svn(exe, date=datetime.now(), author=None, repos=[], mergewith={}):
+    command = [exe, 'log']
     args = ['-r "{%s}:{%s}"' % (date, date + timedelta(1))]
     if author:
         args.append('--search="%s"' % author)
@@ -333,7 +333,7 @@ def read_from_file(filename, activities):
         hours, minutes = columns[2].split(':')
         spenthours = float(hours) + float(minutes) / 60.
         bookings.append({'issue_id': int(columns[4]),
-                         'spent_on': spentdate.date(),
+                         'spent_on': spentdate.strftime('%Y-%m-%d'),
                          'hours': float(spenthours),
                          'comments': columns[6],
                          'project': columns[5],
@@ -419,8 +419,13 @@ def get_bookings(config, Issue, harvest, spent_on):
         if config.has_option(vcs, 'repos'):
             repos = [r for r in config.get(vcs, 'repos').split('\n')
                      if r.strip()]
+        if config.has_option(vcs, 'executable'):
+            exe = config.get(vcs, 'executable')
+        else:
+            #XXX better default
+            exe = '/usr/bin/' + vcs
         loginfo = get_loginfo(
-            vcs, date=spent_on, author=author, repos=repos, mergewith=loginfo)
+            vcs, exe, date=spent_on, author=author, repos=repos, mergewith=loginfo)
     bookings = get_timeinfo(
         config=config,
         date=spent_on,

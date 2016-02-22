@@ -114,7 +114,7 @@ def get_timeinfo(config, date=datetime.now(), baseurl='',
 
 def get_timeinfo_orgmode(filename, date=datetime.now(), baseurl='',
                          loginfo={}, activities=[]):
-    bookings = read_from_file(filename, activities)
+    _, bookings = read_from_file(filename, activities)
     for booking in bookings:
         ticket = get_ticket_no([booking['description']])
         booking['issue_id'] = ticket
@@ -340,7 +340,7 @@ def read_from_file(filename, activities):
                          'description': columns[1],
                          'activity': columns[3],
                          })
-    return bookings
+    return spentdate, bookings
 
 
 def book_redmine(TimeEntry, bookings, activities):
@@ -523,7 +523,7 @@ if __name__ == "__main__":
     if os.path.exists(sessionfile):
         continue_session = raw_input('Continue existing session? [Y/n] ')
         if not continue_session.lower() == 'n':
-            bookings = read_from_file(sessionfile, activities=activities)
+            spent_on, bookings = read_from_file(sessionfile, activities=activities)
         else:
             bookings = get_bookings(config, Issue, harvest, spent_on)
         os.remove(sessionfile)
@@ -542,7 +542,7 @@ if __name__ == "__main__":
             subprocess.check_call(
                 [config.get('main', 'editor') + ' ' + tempfile.name],
                 shell=True)
-            bookings = read_from_file(tempfile.name, activities)
+            spent_on, bookings = read_from_file(tempfile.name, activities)
             tempfile.close()
 
         print_summary(bookings, activities)

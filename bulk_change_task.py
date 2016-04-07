@@ -8,6 +8,15 @@ from octodon import get_config
 from pprint import pprint
 
 
+def harvest_date_range(startdate, enddate):
+    currentdate = startdate
+    while currentdate < enddate:
+        year = currentdate.year
+        day = int(currentdate.strftime('%j'))
+        yield day, year
+        currentdate = currentdate + timedelta(1)
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description='Change task on multiple harvest entries')
@@ -50,12 +59,9 @@ if __name__ == "__main__":
         else:
             print('error: unrecognized date format: {0}'.format(args.date))
             exit(1)
-        interval = (today - min_date).days
     else:
-        interval = 60
+        min_date = today - timedelta(60)
 
-    maxyear = now.year
-    maxday = int(now.strftime('%j'))
     searchterm = args.search
 
     harvest = Harvest(
@@ -65,19 +71,31 @@ if __name__ == "__main__":
 
     entries = reduce(lambda l1, l2: l1 + l2,
                      [harvest.get_day(
-                         day_of_the_year=day, year=maxyear)['day_entries']
-                      for day in xrange(maxday - interval, maxday)])
+                         day_of_the_year=day, year=year)['day_entries']
+                      for day, year in harvest_date_range(min_date, today)])
     matches = filter(lambda entry: searchterm in entry['notes'], entries)
     total_hours = sum([entry['hours'] for entry in matches])
     pprint(matches)
     print('Total hours: ' + str(total_hours))
 
+    old_tasks = set([entry['task'] for entry in matches])
+    print('Booked tasks: {0}.'.format(', '.join(old_tasks)))
+
     if args.new_task:
-        old_tasks = set([entry['task'] for entry in matches])
-        do_change = raw_input('Booked tasks: {0}. Change task on all entries '
-                              'to {1}? [y/N] '.format(
-                                  ', '.join(old_tasks), args.new_task))
-        if do_change.lower() != 'y':
-            exit(0)
-        print('Not implemented yet :-(')
-        #for entry in matches:
+        new_task = args.new_task
+    else:
+        new_task = raw_input('Enter new task (blank for no change): ').strip()
+    if not new_task:
+        exit(0)
+
+    do_change = raw_input(
+        'Change task on {0} entries to {1}? [y/N] '.format(
+            len(matches), new_task))
+    if do_change.lower() != 'y':
+        exit(0)
+    for entry in matches:
+        entry['task'] = new_task
+        result = harvest.update(entry['id'], entry)
+        if 'error' in result:
+            print('Error booking entry {0}: {1}'.format(
+                entry['id'], result['error'].get('message', 'No message')))

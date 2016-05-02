@@ -49,7 +49,8 @@ def redmine_harvest_mapping(harvest_projects, project=None, tracker=None, contra
     else:
         part_matches = [
             proj for proj in harvest_projects
-            if project.lower() in proj.lower()]
+            if project.lower() in proj.lower()
+            or proj.lower() in project.lower()]
         if part_matches:
             harvest_project = part_matches[0]
     if not harvest_project:
@@ -77,13 +78,13 @@ def get_harvest_target(entry, Issue, harvest_projects, redmine_harvest_mapping):
             print('Could not find issue ' + str(issue_no))
 
     if issue is not None:
-        project = issue['project']['name']
-        contracts = [f['value'] for f in issue['custom_fields'] if
+        project = issue['project']['name'].decode('utf-8')
+        contracts = [f.get('value', []) for f in issue['custom_fields'] if
                      f['name'].startswith('Contracts')]
 
     for tag in entry['tags']:
         if tag in harvest_projects:
-            project = str(tag)
+            project = unicode(tag)
     if entry['category'] in harvest_projects:
         project = entry['category']
 
@@ -133,7 +134,8 @@ def get_timeinfo_hamster(date=datetime.now(), baseurl='',
     for fact in facts:
         #delta = (fact.end_time or datetime.now()) - fact.start_time
         #hours = round(fact.delta.seconds / 3600. * 4 + .25) / 4.
-        hours = fact.delta.seconds / 3600.
+        minutes = int(round(fact.delta.seconds / 60.))  # round started minute
+        hours = minutes / 60.
         existing = filter(lambda b: b['description'] == fact.activity
                           and b['spent_on'] == fact.date, bookings)
         if existing:
@@ -227,12 +229,12 @@ def pad(string, length):
 def make_row(entry, activities):
     act_name = entry['activity']
     return ['1',
-            entry['description'],
+            entry['description'].encode('utf-8'),
             format_spent_time(entry['hours']),
             act_name,
             '%04d' % entry['issue_id'],
-            entry['project'],
-            entry['comments'],
+            entry['project'].encode('utf-8'),
+            entry['comments'].encode('utf-8'),
             ]
 
 
@@ -335,10 +337,10 @@ def read_from_file(filename, activities):
         bookings.append({'issue_id': int(columns[4]),
                          'spent_on': spentdate.strftime('%Y-%m-%d'),
                          'hours': float(spenthours),
-                         'comments': columns[6],
-                         'project': columns[5],
-                         'description': columns[1],
-                         'activity': columns[3],
+                         'comments': columns[6].decode('utf-8'),
+                         'project': columns[5].decode('utf-8'),
+                         'description': columns[1].decode('utf-8'),
+                         'activity': columns[3].decode('utf-8'),
                          })
     return spentdate, bookings
 
@@ -365,7 +367,7 @@ def book_redmine(TimeEntry, bookings, activities):
         redmine_entry.save()
 
 
-def book_harvest(harvest, bookings):
+def book_harvest(harvest, bookings, Issue):
     projects = harvest.get_day()['projects']
     projects_lookup = dict(
         [(project[u'name'], project) for project in projects])
@@ -376,12 +378,25 @@ def book_harvest(harvest, bookings):
             [(task[u'name'], task) for task in project[u'tasks']])
         task = tasks_lookup.get(entry['activity'])
         task_id = task and task[u'id'] or -1
-        harvest.add({'notes': entry['comments'] + ' #' + str(entry['issue_id']),
-                     'project_id': project_id,
-                     'hours': str(entry['hours']),
-                     'task_id': task_id,
-                     'spent_at': entry['spent_on'],
-                     })
+
+        issue = None
+        if entry['issue_id'] > 0:
+            try:
+                issue = Issue.get(entry['issue_id'])
+            except (ResourceNotFound, connection.Error):
+                print('Could not find issue ' + str(entry['issue_id']))
+
+        if issue is not None:
+            issue_title = issue['subject']
+
+        harvest.add(
+            {'notes': '#{1} {2}: {0}'.format(
+                entry['comments'], str(entry['issue_id']), issue_title),
+             'project_id': project_id,
+             'hours': str(entry['hours']),
+             'task_id': task_id,
+             'spent_at': entry['spent_on'],
+             })
 
 
 def get_config(cfgfile):
@@ -559,7 +574,7 @@ if __name__ == "__main__":
             edit = False
         if bookings and action.lower() in ['b', 'h']:
             try:
-                book_harvest(harvest, bookings)
+                book_harvest(harvest, bookings, Issue)
             except Exception as e:
                 print('Error while booking - '
                       '%s: %s' % (e.__class__.__name__, e))

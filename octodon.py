@@ -63,6 +63,12 @@ def redmine_harvest_mapping(harvest_projects, project=None, tracker=None, contra
                 if contract.lower() in proj.lower()]
             if part_matches:
                 harvest_project = part_matches[0]
+    # Because of harvest's limited filtering we want bugs in a separate project.
+    if task == 'Bugfixing':
+        if 'recensio' in harvest_project.lower():
+            harvest_project = 'Recensio Bugpool'
+        if 'star' in harvest_project.lower():
+            harvest_project = 'Star Bugpool'
     return (harvest_project, task)
 
 

@@ -471,6 +471,18 @@ def get_bookings(config, Issue, harvest, spent_on):
     return bookings
 
 
+def clean_up_bookings(bookings):
+    removed_time = 0.0
+    for booking in bookings:
+        if booking['category'] == u'Work' and booking['issue_id'] == -1:
+            removed_time += booking['hours']
+            bookings.remove(booking)
+    extra_time_per_entry = removed_time / len(bookings)
+    for booking in bookings:
+        booking['hours'] += extra_time_per_entry
+    return bookings
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description='Extract time tracking data '
@@ -547,9 +559,11 @@ if __name__ == "__main__":
             spent_on, bookings = read_from_file(sessionfile, activities=activities)
         else:
             bookings = get_bookings(config, Issue, harvest, spent_on)
+            #bookings = clean_up_bookings(bookings)
         os.remove(sessionfile)
     else:
         bookings = get_bookings(config, Issue, harvest, spent_on)
+        #bookings = clean_up_bookings(bookings)
 
     finished = False
     edit = True

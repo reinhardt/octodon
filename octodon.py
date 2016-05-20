@@ -31,196 +31,118 @@ def get_ticket_no(strings):
     return len(tickets) and int(tickets[0]) or -1
 
 
-harvest_task_map = {
-    'Support': 'Development',
-    'Feature': 'Development',
-    'Tasks': 'Development',
-    'Bug': 'Bugfixing',
-}
+class HamsterTimeLog(object):
+    def get_timeinfo(self, date=datetime.now(), loginfo={}, activities=[]):
+        default_activity = get_default_activity(activities)
+        from hamster.client import Storage
+        sto = Storage()
+        facts = sto.get_facts(date)
+        bookings = []
+        for fact in facts:
+            #delta = (fact.end_time or datetime.now()) - fact.start_time
+            #hours = round(fact.delta.seconds / 3600. * 4 + .25) / 4.
+            minutes = int(round(fact.delta.seconds / 60.))  # round started minute
+            hours = minutes / 60.
+            existing = filter(lambda b: b['description'] == fact.activity
+                              and b['spent_on'] == fact.date, bookings)
+            if existing:
+                existing[0]['hours'] += hours
+                continue
+            ticket = get_ticket_no(
+                ['#' + tag for tag in fact.tags] + [fact.activity] +
+                [fact.description or ''])
+            bookings.append({'issue_id': ticket,
+                             'spent_on': fact.date,
+                             'hours': hours,
+                             'description': fact.activity,
+                             'activity': default_activity.get('name', 'none'),
+                             'comments': '; '.join(loginfo.get(ticket, [])),
+                             'category': fact.category,
+                             'tags': fact.tags,
+                             'project': ''})
+        return bookings
 
 
-def redmine_harvest_mapping(harvest_projects, project=None, tracker=None, contracts=[], description=''):
-    task = harvest_task_map.get(tracker, 'Development')
-    if 'scrum' in description.lower():
-        task = 'SCRUM Meetings'
-    harvest_project = ''
-    if project in harvest_projects:
-        harvest_project = project
-    else:
-        part_matches = [
-            proj for proj in harvest_projects
-            if project.lower() in proj.lower()
-            or proj.lower() in project.lower()]
-        if part_matches:
-            harvest_project = part_matches[0]
-    if not harvest_project:
-        for contract in contracts:
-            if contract in harvest_projects:
-                harvest_project = contract
-                break
-            part_matches = [
-                proj for proj in harvest_projects
-                if contract.lower() in proj.lower()]
-            if part_matches:
-                harvest_project = part_matches[0]
-    # Because of harvest's limited filtering we want bugs in a separate project.
-    if task == 'Bugfixing':
-        if 'recensio' in harvest_project.lower():
-            harvest_project = 'Recensio Bugpool'
-        if 'star' in harvest_project.lower():
-            harvest_project = 'Star Bugpool'
-    return (harvest_project, task)
+class OrgModeTimeLog(object):
+    def __init__(self, filename):
+        self.filename = filename
+
+    def get_timeinfo(self, date=datetime.now(), loginfo={}, activities=[]):
+        _, bookings = read_from_file(self.filename, activities)
+        for booking in bookings:
+            ticket = get_ticket_no([booking['description']])
+            booking['issue_id'] = ticket
+            booking['comments'] = '; '.join(loginfo.get(ticket, []))
+            booking['project'] = ''
+        return bookings
 
 
-def get_harvest_target(entry, Issue, harvest_projects, redmine_harvest_mapping):
-    issue_no = entry['issue_id']
-    issue = None
-    project = ''
-    contracts = []
-    if issue_no > 0:
-        try:
-            issue = Issue.get(issue_no)
-        except (ResourceNotFound, connection.Error):
-            print('Could not find issue ' + str(issue_no))
+class VCSLog(object):
 
-    if issue is not None:
-        project = issue['project']['name'].decode('utf-8')
-        contracts = [f.get('value', []) for f in issue['custom_fields'] if
-                     f['name'].startswith('Contracts')]
+    def __init__(self, exe=None):
+        self.exe = exe
 
-    for tag in entry['tags']:
-        if tag in harvest_projects:
-            project = unicode(tag)
-    if entry['category'] in harvest_projects:
-        project = entry['category']
-
-    tracker = issue and issue['tracker']['name']
-
-    return redmine_harvest_mapping(
-        harvest_projects,
-        project=project,
-        tracker=tracker,
-        contracts=contracts,
-        description=entry['description'])
+    def extract_loginfo(self, log, mergewith={}):
+        matches = ref_pattern.finditer(log) or []
+        logdict = mergewith
+        for match in matches:
+            comment = ref_keyword_pattern.sub('', match.group(1))
+            comment = comment.strip(' ,').strip(' .')
+            logdict.setdefault(int(match.group(2)), []).append(comment)
+        return logdict
 
 
-def get_timeinfo(config, date=datetime.now(), baseurl='',
-                 loginfo={}, activities=[]):
-    if config.get('main', 'source') == 'hamster':
-        return get_timeinfo_hamster(date=date, baseurl=baseurl,
-                                    loginfo=loginfo, activities=activities)
-    elif config.get('main', 'source') == 'orgmode':
-        filename = config.get('orgmode', 'filename')
-        if not filename:
-            print('Please specify a source file name for org mode!')
-            sys.exit(2)
-        return get_timeinfo_orgmode(date=date, baseurl=baseurl,
-                                    loginfo=loginfo, activities=activities,
-                                    filename=filename)
+    def _get_loginfo(self, command, args, repos=[], mergewith={}):
+        logdict = mergewith
+        for repo in repos:
+            if not os.path.exists(repo):
+                print("Warning: Repository path does not exist: {0}".format(repo))
+                continue
+            os.chdir(repo)
+            try:
+                out = subprocess.check_output(' '.join(command + args), shell=True)
+            except subprocess.CalledProcessError as cpe:
+                print('%s returned %d: %s' % (command, cpe.returncode, cpe.output))
+                continue
+            log = '\n'.join([re.sub(
+                '^([A-Za-z]*:\s*.*\n)*', '', entry).replace(
+                    '\n    ', ' ').strip()
+                for entry in re.split('^commit [a-z0-9]*\n', out)
+                if entry])
+            logdict = self.extract_loginfo(log, logdict)
+        return logdict
 
 
-def get_timeinfo_orgmode(filename, date=datetime.now(), baseurl='',
-                         loginfo={}, activities=[]):
-    _, bookings = read_from_file(filename, activities)
-    for booking in bookings:
-        ticket = get_ticket_no([booking['description']])
-        booking['issue_id'] = ticket
-        booking['comments'] = '; '.join(loginfo.get(ticket, []))
-        booking['project'] = ''
-    return bookings
+    def get_loginfo(self, date=datetime.now(), author=None, repos=[], mergewith={}):
+        raise NotImplemented
 
 
-def get_timeinfo_hamster(date=datetime.now(), baseurl='',
-                         loginfo={}, activities=[]):
-    default_activity = get_default_activity(activities)
-    from hamster.client import Storage
-    sto = Storage()
-    facts = sto.get_facts(date)
-    bookings = []
-    for fact in facts:
-        #delta = (fact.end_time or datetime.now()) - fact.start_time
-        #hours = round(fact.delta.seconds / 3600. * 4 + .25) / 4.
-        minutes = int(round(fact.delta.seconds / 60.))  # round started minute
-        hours = minutes / 60.
-        existing = filter(lambda b: b['description'] == fact.activity
-                          and b['spent_on'] == fact.date, bookings)
-        if existing:
-            existing[0]['hours'] += hours
-            continue
-        ticket = get_ticket_no(
-            ['#' + tag for tag in fact.tags] + [fact.activity] + [fact.description or ''])
-        bookings.append({'issue_id': ticket,
-                         'spent_on': fact.date,
-                         'hours': hours,
-                         'description': fact.activity,
-                         'activity': default_activity.get('name', 'none'),
-                         'comments': '; '.join(loginfo.get(ticket, [])),
-                         'category': fact.category,
-                         'tags': fact.tags,
-                         'project': ''})
-    return bookings
+class SvnLog(VCSLog):
+
+    def __init__(self, exe='/usr/bin/svn'):
+        self.exe = exe
+
+    def get_loginfo(self, date=datetime.now(), author=None, repos=[], mergewith={}):
+        command = [self.exe, 'log']
+        args = ['-r "{%s}:{%s}"' % (date, date + timedelta(1))]
+        if author:
+            args.append('--search="%s"' % author)
+        return self._get_loginfo(
+            command=command, args=args, repos=repos, mergewith=mergewith)
 
 
-def extract_loginfo(log, mergewith={}):
-    matches = ref_pattern.finditer(log) or []
-    logdict = mergewith
-    for match in matches:
-        comment = ref_keyword_pattern.sub('', match.group(1))
-        comment = comment.strip(' ,').strip(' .')
-        logdict.setdefault(int(match.group(2)), []).append(comment)
-    return logdict
+class GitLog(VCSLog):
 
+    def __init__(self, exe='/usr/bin/git'):
+        self.exe = exe
 
-def _get_loginfo(command, args, repos=[], mergewith={}):
-    logdict = mergewith
-    for repo in repos:
-        if not os.path.exists(repo):
-            print("Warning: Repository path does not exist: {0}".format(repo))
-            continue
-        os.chdir(repo)
-        try:
-            out = subprocess.check_output(' '.join(command + args), shell=True)
-        except subprocess.CalledProcessError as cpe:
-            print('%s returned %d: %s' % (command, cpe.returncode, cpe.output))
-            continue
-        log = '\n'.join([re.sub(
-            '^([A-Za-z]*:\s*.*\n)*', '', entry).replace(
-                '\n    ', ' ').strip()
-            for entry in re.split('^commit [a-z0-9]*\n', out)
-            if entry])
-        logdict = extract_loginfo(log, logdict)
-    return logdict
-
-
-def get_loginfo(vcs, exe, date=datetime.now(), author=None, repos=[], mergewith={}):
-    if vcs == 'git':
-        return get_loginfo_git(
-            exe, date=date, author=author, repos=repos, mergewith=mergewith)
-    elif vcs == 'svn':
-        return get_loginfo_svn(
-            exe, date=date, author=author, repos=repos, mergewith=mergewith)
-    else:
-        print('Unrecognized vcs: %s' % vcs)
-        return mergewith
-
-
-def get_loginfo_git(exe, date=datetime.now(), author=None, repos=[], mergewith={}):
-    command = [exe, '--no-pager', '-c', 'color.diff=false', 'log', '--branches', '--reverse']
-    args = ['--since="{%s}"' % date, '--until="{%s}"' % (date + timedelta(1))]
-    if author:
-        args.append('--author="%s"' % author)
-    return _get_loginfo(
-        command=command, args=args, repos=repos, mergewith=mergewith)
-
-
-def get_loginfo_svn(exe, date=datetime.now(), author=None, repos=[], mergewith={}):
-    command = [exe, 'log']
-    args = ['-r "{%s}:{%s}"' % (date, date + timedelta(1))]
-    if author:
-        args.append('--search="%s"' % author)
-    return _get_loginfo(
-        command=command, args=args, repos=repos, mergewith=mergewith)
-
+    def get_loginfo(self, date=datetime.now(), author=None, repos=[], mergewith={}):
+        command = [self.exe, '--no-pager', '-c', 'color.diff=false', 'log', '--branches', '--reverse']
+        args = ['--since="{%s}"' % date, '--until="{%s}"' % (date + timedelta(1))]
+        if author:
+            args.append('--author="%s"' % author)
+        return self._get_loginfo(
+            command=command, args=args, repos=repos, mergewith=mergewith)
 
 def format_spent_time(time):
     hours = math.floor(time)
@@ -262,19 +184,6 @@ def make_table(rows):
 
     out_strs.append(divider)
     return '\n'.join(out_strs)
-
-
-def print_summary(bookings, activities):
-    no_issue_or_comment = [
-        entry for entry in bookings
-        if entry['issue_id'] < 0 or len(entry['comments']) <= 0]
-    if len(no_issue_or_comment) > 0:
-        rows = [make_row(entry, activities) for entry in no_issue_or_comment]
-        print('Warning: No issue id and/or comments for the following entries:'
-              '\n{0}'.format(make_table(rows)))
-    total_hours = get_time_sum(bookings)
-    print('total hours: %.2f (%d:%d)' % (
-        total_hours, int(total_hours), (total_hours - int(total_hours)) * 60.))
 
 
 def get_time_sum(bookings):
@@ -351,58 +260,335 @@ def read_from_file(filename, activities):
     return spentdate, bookings
 
 
-def book_redmine(TimeEntry, bookings, activities):
-    default_activity = get_default_activity(activities)
-    for entry in bookings:
-        if entry['issue_id'] <= 0:
-            print("No valid issue id, skipping entry (%s)" %
-                  entry['description'])
-            continue
-        rm_entry = entry.copy()
-
-        activities_dict = dict([(act['name'], act) for act in activities])
-        act = activities_dict.get(entry['activity'])
-        rm_entry['activity_id'] = act and act['id'] or default_activity['id']
-
-        if 'description' in rm_entry:
-            del rm_entry['description']
-        if 'activity' in rm_entry:
-            del rm_entry['activity']
-
-        redmine_entry = TimeEntry(rm_entry)
-        redmine_entry.save()
+def clean_up_bookings(bookings):
+    removed_time = 0.0
+    for booking in bookings:
+        if booking['category'] == u'Work' and booking['issue_id'] == -1:
+            removed_time += booking['hours']
+            bookings.remove(booking)
+    extra_time_per_entry = removed_time / len(bookings)
+    for booking in bookings:
+        booking['hours'] += extra_time_per_entry
+    return bookings
 
 
-def book_harvest(harvest, bookings, Issue):
-    projects = harvest.get_day()['projects']
-    projects_lookup = dict(
-        [(project[u'name'], project) for project in projects])
-    for entry in bookings:
-        project = projects_lookup[entry['project']]
-        project_id = project and project[u'id'] or -1
-        tasks_lookup = dict(
-            [(task[u'name'], task) for task in project[u'tasks']])
-        task = tasks_lookup.get(entry['activity'])
-        task_id = task and task[u'id'] or -1
+class Redmine(object):
+    def __init__(self, url, user, password):
+        class RedmineResource(ActiveResource):
+            _site = url
+            _user = user
+            _password = password
 
+        class TimeEntry(RedmineResource):
+            pass
+
+        class Enumerations(RedmineResource):
+            pass
+
+        class Issue(RedmineResource):
+            pass
+
+        self.TimeEntry = TimeEntry
+        self.Enumerations = Enumerations
+        self.Issue = Issue
+
+        try:
+            self.activities = self.Enumerations.get('time_entry_activities')
+        except connection.Error:
+            print('Could not get redmine activities: Connection error')
+            self.activities = []
+
+    def book_redmine(self, bookings):
+        default_activity = get_default_activity(self.activities)
+        for entry in bookings:
+            if entry['issue_id'] <= 0:
+                print("No valid issue id, skipping entry (%s)" %
+                    entry['description'])
+                continue
+            rm_entry = entry.copy()
+
+            activities_dict = dict([(act['name'], act) for act in self.activities])
+            act = activities_dict.get(entry['activity'])
+            rm_entry['activity_id'] = act and act['id'] or default_activity['id']
+
+            if 'description' in rm_entry:
+                del rm_entry['description']
+            if 'activity' in rm_entry:
+                del rm_entry['activity']
+
+            self.TimeEntry(rm_entry).save()
+
+
+class Tracking(object):
+
+    harvest_task_map = {
+        'Support': 'Development',
+        'Feature': 'Development',
+        'Tasks': 'Development',
+        'Bug': 'Bugfixing',
+    }
+
+    def __init__(self, redmine, harvest):
+        self.redmine = redmine
+        self.harvest = harvest
+
+    def book_harvest(self, bookings):
+        projects = self.harvest.get_day()['projects']
+        projects_lookup = dict(
+            [(project[u'name'], project) for project in projects])
+        for entry in bookings:
+            project = projects_lookup[entry['project']]
+            project_id = project and project[u'id'] or -1
+            tasks_lookup = dict(
+                [(task[u'name'], task) for task in project[u'tasks']])
+            task = tasks_lookup.get(entry['activity'])
+            task_id = task and task[u'id'] or -1
+
+            issue = None
+            if entry['issue_id'] > 0:
+                try:
+                    issue = self.redmine.Issue.get(entry['issue_id'])
+                except (ResourceNotFound, connection.Error):
+                    print('Could not find issue ' + str(entry['issue_id']))
+
+            if issue is not None:
+                issue_title = issue['subject']
+
+            self.harvest.add(
+                {'notes': '#{1} {2}: {0}'.format(
+                 entry['comments'], str(entry['issue_id']), issue_title),
+                 'project_id': project_id,
+                 'hours': str(entry['hours']),
+                 'task_id': task_id,
+                 'spent_at': entry['spent_on'],
+                 })
+
+    def redmine_harvest_mapping(self, harvest_projects, project=None,
+                                tracker=None, contracts=[], description=''):
+        task = self.harvest_task_map.get(tracker, 'Development')
+        if 'scrum' in description.lower():
+            task = 'SCRUM Meetings'
+        harvest_project = ''
+        if project in harvest_projects:
+            harvest_project = project
+        else:
+            part_matches = [
+                proj for proj in harvest_projects
+                if project.lower() in proj.lower()
+                or proj.lower() in project.lower()]
+            if part_matches:
+                harvest_project = part_matches[0]
+        if not harvest_project:
+            for contract in contracts:
+                if contract in harvest_projects:
+                    harvest_project = contract
+                    break
+                part_matches = [
+                    proj for proj in harvest_projects
+                    if contract.lower() in proj.lower()]
+                if part_matches:
+                    harvest_project = part_matches[0]
+        # Because of harvest's limited filtering we want bugs in a separate project.
+        if task == 'Bugfixing':
+            if 'recensio' in harvest_project.lower():
+                harvest_project = 'Recensio Bugpool'
+            if 'star' in harvest_project.lower():
+                harvest_project = 'Star Bugpool'
+        return (harvest_project, task)
+
+
+    def get_harvest_target(self, entry):
+        try:
+            projects = self.harvest.get_day()['projects']
+        except Exception as e:
+            print('Could not get harvest projects: {0}: {1}'.format(
+                e.__class__.__name__, e))
+            projects = []
+        harvest_projects = [project[u'name'] for project in projects]
+
+        issue_no = entry['issue_id']
         issue = None
-        if entry['issue_id'] > 0:
+        project = ''
+        contracts = []
+        if issue_no > 0:
             try:
-                issue = Issue.get(entry['issue_id'])
+                issue = self.redmine.Issue.get(issue_no)
             except (ResourceNotFound, connection.Error):
-                print('Could not find issue ' + str(entry['issue_id']))
+                print('Could not find issue ' + str(issue_no))
 
         if issue is not None:
-            issue_title = issue['subject']
+            project = issue['project']['name'].decode('utf-8')
+            contracts = [f.get('value', []) for f in issue['custom_fields'] if
+                        f['name'].startswith('Contracts')]
 
-        harvest.add(
-            {'notes': '#{1} {2}: {0}'.format(
-                entry['comments'], str(entry['issue_id']), issue_title),
-             'project_id': project_id,
-             'hours': str(entry['hours']),
-             'task_id': task_id,
-             'spent_at': entry['spent_on'],
-             })
+        for tag in entry['tags']:
+            if tag in harvest_projects:
+                project = unicode(tag)
+        if entry['category'] in harvest_projects:
+            project = entry['category']
+
+        tracker = issue and issue['tracker']['name']
+
+        return self.redmine_harvest_mapping(
+            harvest_projects,
+            project=project,
+            tracker=tracker,
+            contracts=contracts,
+            description=entry['description'])
+
+
+class Octodon(object):
+    def __init__(self, config):
+        self.config = get_config(cfgfile)
+
+        if config.get('main', 'source') == 'hamster':
+            self.time_log = HamsterTimeLog()
+        elif config.get('main', 'source') == 'orgmode':
+            filename = config.get('orgmode', 'filename')
+            self.time_log = OrgModeTimeLog(filename)
+
+        self.redmine = Redmine(
+            config.get('redmine', 'url'),
+            config.get('redmine', 'user'),
+            config.get('redmine', 'pass'))
+
+        vcs_class = {
+            'git': GitLog,
+            'svn': SvnLog,
+        }
+
+        self.vcs_list = []
+        for vcs in self.config.get('main', 'vcs').split('\n'):
+            if not vcs:
+                continue
+            if not self.config.has_section(vcs):
+                continue
+            author = None
+            repos = []
+            if self.config.has_option(vcs, 'author'):
+                author = self.config.get(vcs, 'author')
+            if self.config.has_option(vcs, 'repos'):
+                repos = [r for r in self.config.get(vcs, 'repos').split('\n')
+                         if r.strip()]
+            if self.config.has_option(vcs, 'executable'):
+                exe = self.config.get(vcs, 'executable')
+            else:
+                #XXX better default
+                exe = '/usr/bin/' + vcs
+            self.vcs_list.append({
+                'name': vcs,
+                'class': vcs_class.get(vcs, VCSLog),
+                'author': author,
+                'repos': repos,
+                'exe': exe,
+            })
+
+        if config.has_section('harvest'):
+            from harvest import Harvest
+            harvest = Harvest(
+                    config.get('harvest', 'url'),
+                    config.get('harvest', 'user'),
+                    config.get('harvest', 'pass'))
+        else:
+            harvest = None
+
+        self.tracking = Tracking(self.redmine, harvest)
+
+    def get_bookings(self, spent_on):
+        loginfo = {}
+        for vcs_config in self.vcs_list:
+            vcslog = vcs_config['class'](exe=vcs_config['exe'])
+            try:
+                loginfo = vcslog.get_loginfo(
+                    date=spent_on,
+                    author=vcs_config['author'],
+                    repos=vcs_config['repos'],
+                    mergewith=loginfo)
+            except NotImplemented:
+                print('Unrecognized vcs: %s' % vcs_config['name'])
+
+        bookings = self.time_log.get_timeinfo(
+            date=spent_on,
+            loginfo=loginfo,
+            activities=self.redmine.activities)
+        if self.tracking.harvest is not None:
+            for entry in bookings:
+                project, task = self.tracking.get_harvest_target(entry)
+                entry['project'] = project
+                entry['activity'] = task
+        return bookings
+
+    def print_summary(self, bookings):
+        no_issue_or_comment = [
+            entry for entry in bookings
+            if entry['issue_id'] < 0 or len(entry['comments']) <= 0]
+        if len(no_issue_or_comment) > 0:
+            rows = [make_row(entry, self.redmine.activities) for entry in no_issue_or_comment]
+            print('Warning: No issue id and/or comments for the following entries:'
+                '\n{0}'.format(make_table(rows)))
+        total_hours = get_time_sum(bookings)
+        print('total hours: %.2f (%d:%d)' % (
+            total_hours, int(total_hours), (total_hours - int(total_hours)) * 60.))
+
+    def __call__(self, spent_on):
+        sessionfile = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                '.octodon_session_timelog')
+        if os.path.exists(sessionfile):
+            continue_session = raw_input('Continue existing session? [Y/n] ')
+            if not continue_session.lower() == 'n':
+                spent_on, bookings = read_from_file(
+                    sessionfile, activities=self.redmine.activities)
+            else:
+                bookings = self.get_bookings(spent_on)
+                #bookings = clean_up_bookings(bookings)
+            os.remove(sessionfile)
+        else:
+            bookings = self.get_bookings(spent_on)
+            #bookings = clean_up_bookings(bookings)
+
+        finished = False
+        edit = True
+        while not finished:
+            if edit:
+                tempfile = write_to_file(
+                    bookings,
+                    spent_on,
+                    self.redmine.activities,
+                    file_name=sessionfile)
+                subprocess.check_call(
+                    [config.get('main', 'editor') + ' ' + tempfile.name],
+                    shell=True)
+                spent_on, bookings = read_from_file(
+                    tempfile.name, self.redmine.activities)
+                tempfile.close()
+
+            self.print_summary(bookings)
+            action = raw_input(
+                '(e)dit again/book (r)edmine/book (h)arvest/(b)ook all/'
+                '(q)uit/(Q)uit and discard session? [e] ')
+
+            if bookings and action.lower() in ['b', 'r']:
+                try:
+                    self.redmine.book_redmine(bookings)
+                except Exception as e:
+                    print('Error while booking - comments too long? Error was: '
+                          '%s: %s' % (e.__class__.__name__, e))
+                edit = False
+            if bookings and action.lower() in ['b', 'h']:
+                try:
+                    self.tracking.book_harvest(bookings)
+                except Exception as e:
+                    print('Error while booking - '
+                          '%s: %s' % (e.__class__.__name__, e))
+                edit = False
+
+            if action == 'q':
+                finished = True
+            if action == 'Q':
+                finished = True
+                os.remove(sessionfile)
+            if action == 'e' or action == '':
+                edit = True
 
 
 def get_config(cfgfile):
@@ -426,63 +612,6 @@ def get_config(cfgfile):
     return config
 
 
-def get_bookings(config, Issue, harvest, spent_on):
-    loginfo = {}
-    for vcs in config.get('main', 'vcs').split('\n'):
-        if not vcs:
-            continue
-        if not config.has_section(vcs):
-            continue
-        author = None
-        repos = []
-        if config.has_option(vcs, 'author'):
-            author = config.get(vcs, 'author')
-        if config.has_option(vcs, 'repos'):
-            repos = [r for r in config.get(vcs, 'repos').split('\n')
-                     if r.strip()]
-        if config.has_option(vcs, 'executable'):
-            exe = config.get(vcs, 'executable')
-        else:
-            #XXX better default
-            exe = '/usr/bin/' + vcs
-        loginfo = get_loginfo(
-            vcs, exe, date=spent_on, author=author, repos=repos, mergewith=loginfo)
-    bookings = get_timeinfo(
-        config=config,
-        date=spent_on,
-        loginfo=loginfo,
-        activities=activities)
-    if harvest is not None:
-        try:
-            projects = harvest.get_day()['projects']
-        except Exception as e:
-            print('Could not get harvest projects: {0}: {1}'.format(
-                e.__class__.__name__, e))
-            projects = []
-        harvest_projects = [project[u'name'] for project in projects]
-        for entry in bookings:
-            project, task = get_harvest_target(
-                entry,
-                Issue,
-                harvest_projects,
-                redmine_harvest_mapping)
-            entry['project'] = project
-            entry['activity'] = task
-    return bookings
-
-
-def clean_up_bookings(bookings):
-    removed_time = 0.0
-    for booking in bookings:
-        if booking['category'] == u'Work' and booking['issue_id'] == -1:
-            removed_time += booking['hours']
-            bookings.remove(booking)
-    extra_time_per_entry = removed_time / len(bookings)
-    for booking in bookings:
-        booking['hours'] += extra_time_per_entry
-    return bookings
-
-
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description='Extract time tracking data '
@@ -504,28 +633,7 @@ if __name__ == "__main__":
     else:
         cfgfile = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                'octodon.cfg')
-    sessionfile = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                               '.octodon_session_timelog')
     config = get_config(cfgfile)
-
-    class RedmineResource(ActiveResource):
-        _site = config.get('redmine', 'url')
-        _user = config.get('redmine', 'user')
-        _password = config.get('redmine', 'pass')
-
-    class TimeEntry(RedmineResource):
-        pass
-
-    class Enumerations(RedmineResource):
-        pass
-
-    class Issue(RedmineResource):
-        pass
-
-    try:
-        activities = Enumerations.get('time_entry_activities')
-    except connection.Error:
-        activities = []
 
     now = datetime.now()
     today = now.replace(hour=0, minute=0, second=0, microsecond=0)
@@ -541,69 +649,8 @@ if __name__ == "__main__":
         elif re.match(r'[0-9]{8}$', args.date):
             spent_on = datetime.strptime(args.date, '%Y%m%d')
         else:
-            print('error: unrecognized date format: {0}'.format(args.date))
-            exit(1)
+            raise Esception('unrecognized date format: {0}'.format(
+                args.date))
 
-    if config.has_section('harvest'):
-        from harvest import Harvest
-        harvest = Harvest(
-            config.get('harvest', 'url'),
-            config.get('harvest', 'user'),
-            config.get('harvest', 'pass'))
-    else:
-        harvest = None
-
-    if os.path.exists(sessionfile):
-        continue_session = raw_input('Continue existing session? [Y/n] ')
-        if not continue_session.lower() == 'n':
-            spent_on, bookings = read_from_file(sessionfile, activities=activities)
-        else:
-            bookings = get_bookings(config, Issue, harvest, spent_on)
-            #bookings = clean_up_bookings(bookings)
-        os.remove(sessionfile)
-    else:
-        bookings = get_bookings(config, Issue, harvest, spent_on)
-        #bookings = clean_up_bookings(bookings)
-
-    finished = False
-    edit = True
-    while not finished:
-        if edit:
-            tempfile = write_to_file(
-                bookings,
-                spent_on,
-                activities,
-                file_name=sessionfile)
-            subprocess.check_call(
-                [config.get('main', 'editor') + ' ' + tempfile.name],
-                shell=True)
-            spent_on, bookings = read_from_file(tempfile.name, activities)
-            tempfile.close()
-
-        print_summary(bookings, activities)
-        action = raw_input(
-            '(e)dit again/book (r)edmine/book (h)arvest/(b)ook all/'
-            '(q)uit/(Q)uit and discard session? [e] ')
-
-        if bookings and action.lower() in ['b', 'r']:
-            try:
-                book_redmine(TimeEntry, bookings, activities)
-            except Exception as e:
-                print('Error while booking - comments too long? Error was: '
-                      '%s: %s' % (e.__class__.__name__, e))
-            edit = False
-        if bookings and action.lower() in ['b', 'h']:
-            try:
-                book_harvest(harvest, bookings, Issue)
-            except Exception as e:
-                print('Error while booking - '
-                      '%s: %s' % (e.__class__.__name__, e))
-            edit = False
-
-        if action == 'q':
-            finished = True
-        if action == 'Q':
-            finished = True
-            os.remove(sessionfile)
-        if action == 'e' or action == '':
-            edit = True
+    octodon = Octodon(config)
+    octodon(spent_on)

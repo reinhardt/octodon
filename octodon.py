@@ -42,18 +42,18 @@ class HamsterTimeLog(object):
             #delta = (fact.end_time or datetime.now()) - fact.start_time
             #hours = round(fact.delta.seconds / 3600. * 4 + .25) / 4.
             minutes = int(round(fact.delta.seconds / 60.))  # round started minute
-            hours = minutes / 60.
+            #hours = minutes / 60.
             existing = filter(lambda b: b['description'] == fact.activity
                               and b['spent_on'] == fact.date, bookings)
             if existing:
-                existing[0]['hours'] += hours
+                existing[0]['time'] += minutes
                 continue
             ticket = get_ticket_no(
                 ['#' + tag for tag in fact.tags] + [fact.activity] +
                 [fact.description or ''])
             bookings.append({'issue_id': ticket,
                              'spent_on': fact.date,
-                             'hours': hours,
+                             'time': minutes,
                              'description': fact.activity,
                              'activity': default_activity.get('name', 'none'),
                              'comments': '; '.join(loginfo.get(ticket, [])),
@@ -145,8 +145,8 @@ class GitLog(VCSLog):
             command=command, args=args, repos=repos, mergewith=mergewith)
 
 def format_spent_time(time):
-    hours = math.floor(time)
-    mins = (time - hours) * 60
+    hours = int(time / 60.)
+    mins = math.ceil(time - (hours * 60.))
     return '%2d:%02d' % (hours, mins)
 
 
@@ -158,7 +158,7 @@ def make_row(entry, activities):
     act_name = entry['activity']
     return ['1',
             entry['description'].encode('utf-8'),
-            format_spent_time(entry['hours']),
+            format_spent_time(entry['time']),
             act_name,
             '%04d' % entry['issue_id'],
             entry['project'].encode('utf-8'),
@@ -171,14 +171,14 @@ def make_table(rows):
     columns = zip(*rows)
     max_lens = [max([len(entry) for entry in column]) for column in columns]
     out_strs = []
-    divider = '+%s+' % '+'.join(
-        ['-' * (max_len + 2) for max_len in max_lens]
+    divider = u'+%s+' % u'+'.join(
+        [u'-' * (max_len + 2) for max_len in max_lens]
     )
     for row in rows:
         vals = []
         for i in range(len(row)):
-            vals.append(' %s ' % pad(row[i], max_lens[i]))
-        row_str = '|%s|' % '|'.join(vals)
+            vals.append(u' %s ' % pad(row[i], max_lens[i]))
+        row_str = u'|%s|' % u'|'.join(vals)
         out_strs.append(divider)
         out_strs.append(row_str)
 
@@ -189,7 +189,7 @@ def make_table(rows):
 def get_time_sum(bookings):
     if len(bookings) == 0:
         return 0.
-    return reduce(lambda x, y: x+y, map(lambda x: x['hours'], bookings))
+    return reduce(lambda x, y: x+y, map(lambda x: x['time'], bookings))
 
 
 def write_to_file(bookings, spent_on, activities, file_name=None):
@@ -200,25 +200,22 @@ def write_to_file(bookings, spent_on, activities, file_name=None):
     summary_time = min(
         datetime.now(),
         (spent_on + timedelta(1) - timedelta(0, 1)))
-    tmpfile.write('#+BEGIN: clocktable :maxlevel 2 :scope file\n')
-    tmpfile.write('Clock summary at [' +
-                  summary_time.strftime('%Y-%m-%d %a %H:%M') + ']\n')
+    tmpfile.write(u'#+BEGIN: clocktable :maxlevel 2 :scope file\n')
+    tmpfile.write(u'Clock summary at [' +
+                  summary_time.strftime('%Y-%m-%d %a %H:%M') + u']\n')
     tmpfile.write('\n')
 
     rows = []
 
-    if len(bookings) == 0:
-        sum = 0.
-    else:
-        sum = reduce(lambda x, y: x+y, map(lambda x: x['hours'], bookings))
-    rows.append([' ', '*Total time*', '*%s*' % format_spent_time(sum), ' ',
+    sum = get_time_sum(bookings)
+    rows.append([' ', u'*Total time*', u'*%s*' % format_spent_time(sum), ' ',
                  ' ', ' ', ' '])
     rows += [make_row(entry, activities) for entry in bookings]
     tmpfile.write(make_table(rows))
 
-    tmpfile.write('\n')
-    tmpfile.write('\n')
-    tmpfile.write('Available activities: %s\n' % ', '.join(
+    tmpfile.write(u'\n')
+    tmpfile.write(u'\n')
+    tmpfile.write(u'Available activities: %s\n' % u', '.join(
         [act['name'] for act in activities]))
     tmpfile.flush()
     return tmpfile
@@ -248,10 +245,10 @@ def read_from_file(filename, activities):
             continue
         columns = columns + default_columns[len(columns):]
         hours, minutes = columns[2].split(':')
-        spenthours = float(hours) + float(minutes) / 60.
+        spenttime = int(hours) * 60 + int(minutes)
         bookings.append({'issue_id': int(columns[4]),
                          'spent_on': spentdate.strftime('%Y-%m-%d'),
-                         'hours': float(spenthours),
+                         'time': float(spenttime),
                          'comments': columns[6].decode('utf-8'),
                          'project': columns[5].decode('utf-8'),
                          'description': columns[1].decode('utf-8'),
@@ -264,11 +261,11 @@ def clean_up_bookings(bookings):
     removed_time = 0.0
     for booking in bookings:
         if booking['category'] == u'Work' and booking['issue_id'] == -1:
-            removed_time += booking['hours']
+            removed_time += booking['time']
             bookings.remove(booking)
     extra_time_per_entry = removed_time / len(bookings)
     for booking in bookings:
-        booking['hours'] += extra_time_per_entry
+        booking['time'] += extra_time_per_entry
     return bookings
 
 
@@ -310,13 +307,20 @@ class Redmine(object):
             activities_dict = dict([(act['name'], act) for act in self.activities])
             act = activities_dict.get(entry['activity'])
             rm_entry['activity_id'] = act and act['id'] or default_activity['id']
+            rm_entry['hours'] = rm_entry['time'] / 60.
+            del rm_entry['time']
 
             if 'description' in rm_entry:
                 del rm_entry['description']
             if 'activity' in rm_entry:
                 del rm_entry['activity']
 
-            self.TimeEntry(rm_entry).save()
+            rm_time_entry = self.TimeEntry(rm_entry)
+            success = rm_time_entry.save()
+            if not success:
+                for field, msgs in rm_time_entry.errors.errors.items():
+                    print(u'{0}: {1} ({2})'.format(
+                        field, u','.join(msgs), rm_entry['comments']))
 
 
 class Tracking(object):
@@ -358,7 +362,7 @@ class Tracking(object):
                 {'notes': '#{1} {2}: {0}'.format(
                  entry['comments'], str(entry['issue_id']), issue_title),
                  'project_id': project_id,
-                 'hours': str(entry['hours']),
+                 'hours': str(entry['time'] / 60.),
                  'task_id': task_id,
                  'spent_at': entry['spent_on'],
                  })
@@ -526,9 +530,10 @@ class Octodon(object):
             rows = [make_row(entry, self.redmine.activities) for entry in no_issue_or_comment]
             print('Warning: No issue id and/or comments for the following entries:'
                 '\n{0}'.format(make_table(rows)))
-        total_hours = get_time_sum(bookings)
-        print('total hours: %.2f (%d:%d)' % (
-            total_hours, int(total_hours), (total_hours - int(total_hours)) * 60.))
+        total_time = get_time_sum(bookings)
+        total_hours = total_time / 60.
+        print('total hours: %.2f (%s)' % (
+            total_hours, format_spent_time(total_time)))
 
     def __call__(self, spent_on):
         sessionfile = os.path.join(os.path.dirname(os.path.abspath(__file__)),

@@ -41,7 +41,7 @@ class HamsterTimeLog(object):
         for fact in facts:
             #delta = (fact.end_time or datetime.now()) - fact.start_time
             #hours = round(fact.delta.seconds / 3600. * 4 + .25) / 4.
-            minutes = int(round(fact.delta.seconds / 60.))  # round started minute
+            minutes = fact.delta.seconds / 60.
             #hours = minutes / 60.
             existing = filter(lambda b: b['description'] == fact.activity
                               and b['spent_on'] == fact.date, bookings)
@@ -145,8 +145,11 @@ class GitLog(VCSLog):
             command=command, args=args, repos=repos, mergewith=mergewith)
 
 def format_spent_time(time):
-    hours = int(time / 60.)
-    mins = math.ceil(time - (hours * 60.))
+    rounded_time = math.ceil(time)
+    hours = int(rounded_time / 60.)
+    mins = math.ceil(rounded_time - (hours * 60.))
+    #hours = round(time) / 60
+    #mins = round(time) - (hours * 60)
     return '%2d:%02d' % (hours, mins)
 
 
@@ -263,9 +266,9 @@ def clean_up_bookings(bookings):
         if booking['category'] == u'Work' and booking['issue_id'] == -1:
             removed_time += booking['time']
             bookings.remove(booking)
-    extra_time_per_entry = removed_time / len(bookings)
+    sum_time = get_time_sum(bookings)
     for booking in bookings:
-        booking['time'] += extra_time_per_entry
+        booking['time'] += removed_time * booking['time'] / sum_time
     return bookings
 
 
@@ -375,7 +378,7 @@ class Tracking(object):
         harvest_project = ''
         if project in harvest_projects:
             harvest_project = project
-        else:
+        elif project:
             part_matches = [
                 proj for proj in harvest_projects
                 if project.lower() in proj.lower()
@@ -545,11 +548,11 @@ class Octodon(object):
                     sessionfile, activities=self.redmine.activities)
             else:
                 bookings = self.get_bookings(spent_on)
-                #bookings = clean_up_bookings(bookings)
+                bookings = clean_up_bookings(bookings)
             os.remove(sessionfile)
         else:
             bookings = self.get_bookings(spent_on)
-            #bookings = clean_up_bookings(bookings)
+            bookings = clean_up_bookings(bookings)
 
         finished = False
         edit = True

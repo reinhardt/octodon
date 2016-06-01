@@ -2,6 +2,7 @@ import unittest
 from datetime import date
 from datetime import datetime
 from octodon import Tracking
+from octodon import clean_up_bookings
 from octodon import format_spent_time
 from octodon import read_from_file
 from octodon import write_to_file
@@ -178,6 +179,96 @@ class TestOctodon(unittest.TestCase):
         self.assertEqual(
             read_from_file('.test_octodon', activities),
             (spent_on, bookings))
+
+    def test_clean_up_bookings(self):
+        bookings = [
+            {'activity': 'Development',
+             'category': u'Work',
+             'comments': '',
+             'description': u'book time',
+             'issue_id': -1,
+             'project': '',
+             'spent_on': date(2016, 5, 31),
+             'tags': [],
+             'time': 20.},
+            {'activity': 'Development',
+             'category': u'Work',
+             'comments': '',
+             'description': u'Gemeinsame Durchsuchbarkeit #13568',
+             'issue_id': 13568,
+             'project': u'T\xf6chter',
+             'spent_on': date(2016, 5, 31),
+             'tags': [],
+             'time': 420.},
+            {'activity': 'Development',
+             'category': u'Day-to-day',
+             'comments': '',
+             'description': u'break',
+             'issue_id': -1,
+             'project': '',
+             'spent_on': date(2016, 5, 31),
+             'tags': [],
+             'time': 60.},
+            {'activity': 'SCRUM Meetings',
+             'category': u'Work',
+             'comments': '',
+             'description': u'daily scrum #13572',
+             'issue_id': 13572,
+             'project': u'Internals',
+             'spent_on': date(2016, 5, 31),
+             'tags': [],
+             'time': 20.},
+            {'activity': 'Development',
+             'category': u'Work',
+             'comments': '',
+             'description': u'Suche liefert "Unzureichende Berechtigungen" #13678',
+             'issue_id': 13678,
+             'project': u'T\xf6chter',
+             'spent_on': date(2016, 5, 31),
+             'tags': [],
+             'time': 85.},
+        ]
+        cleaned_bookings = clean_up_bookings(bookings)
+        self.assertEqual(
+            cleaned_bookings,
+            [
+                {'activity': 'Development',
+                 'category': u'Work',
+                 'comments': '',
+                 'description': u'Gemeinsame Durchsuchbarkeit #13568',
+                 'issue_id': 13568,
+                 'project': u'T\xf6chter',
+                 'spent_on': date(2016, 5, 31),
+                 'tags': [],
+                 'time': 436.},
+                {'activity': 'Development',
+                 'category': u'Day-to-day',
+                 'comments': '',
+                 'description': u'break',
+                 'issue_id': -1,
+                 'project': '',
+                 'spent_on': date(2016, 5, 31),
+                 'tags': [],
+                 'time': 60.},
+                {'activity': 'SCRUM Meetings',
+                 'category': u'Work',
+                 'comments': '',
+                 'description': u'daily scrum #13572',
+                 'issue_id': 13572,
+                 'project': u'Internals',
+                 'spent_on': date(2016, 5, 31),
+                 'tags': [],
+                 'time': 20.761904761904762},
+                {'activity': 'Development',
+                 'category': u'Work',
+                 'comments': '',
+                 'description': u'Suche liefert "Unzureichende Berechtigungen" #13678',
+                 'issue_id': 13678,
+                 'project': u'T\xf6chter',
+                 'spent_on': date(2016, 5, 31),
+                 'tags': [],
+                 'time': 88.238095238095238},
+            ])
 
 
 if __name__ == '__main__':

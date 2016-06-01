@@ -262,13 +262,19 @@ def read_from_file(filename, activities):
 
 def clean_up_bookings(bookings):
     removed_time = 0.0
+    ignored_time = 0.0
     for booking in bookings:
-        if booking['category'] == u'Work' and booking['issue_id'] == -1:
-            removed_time += booking['time']
-            bookings.remove(booking)
-    sum_time = get_time_sum(bookings)
+        if booking['issue_id'] == -1:
+            if booking['category'] == u'Work':
+                print('Removing ' + booking['description'])
+                removed_time += booking['time']
+                bookings.remove(booking)
+            else:
+                ignored_time += booking['time']
+    sum_time = get_time_sum(bookings) - ignored_time
     for booking in bookings:
-        booking['time'] += removed_time * booking['time'] / sum_time
+        if booking['category'] == u'Work':
+            booking['time'] += removed_time * booking['time'] / sum_time
     return bookings
 
 

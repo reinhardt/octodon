@@ -263,10 +263,11 @@ def read_from_file(filename, activities):
 def clean_up_bookings(bookings):
     removed_time = 0.0
     ignored_time = 0.0
-    for booking in bookings:
+    for booking in bookings[:]:
         if booking['issue_id'] == -1:
             if booking['category'] == u'Work':
-                print('Removing ' + booking['description'])
+                print('Removing {0} ({1})'.format(
+                    booking['description'], booking['time']))
                 removed_time += booking['time']
                 bookings.remove(booking)
             else:

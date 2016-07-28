@@ -345,11 +345,22 @@ class Tracking(object):
     def __init__(self, redmine, harvest):
         self.redmine = redmine
         self.harvest = harvest
+        self._projects = []
+
+    @property
+    def projects(self):
+        if not self._projects:
+            try:
+                self._projects = self.harvest.get_day()['projects']
+            except Exception as e:
+                print('Could not get harvest projects: {0}: {1}'.format(
+                    e.__class__.__name__, e))
+                self._projects = []
+        return self._projects
 
     def book_harvest(self, bookings):
-        projects = self.harvest.get_day()['projects']
         projects_lookup = dict(
-            [(project[u'name'], project) for project in projects])
+            [(project[u'name'], project) for project in self.projects])
         for entry in bookings:
             project = projects_lookup[entry['project']]
             project_id = project and project[u'id'] or -1
@@ -412,13 +423,7 @@ class Tracking(object):
 
 
     def get_harvest_target(self, entry):
-        try:
-            projects = self.harvest.get_day()['projects']
-        except Exception as e:
-            print('Could not get harvest projects: {0}: {1}'.format(
-                e.__class__.__name__, e))
-            projects = []
-        harvest_projects = [project[u'name'] for project in projects]
+        harvest_projects = [project[u'name'] for project in self.projects]
 
         issue_no = entry['issue_id']
         issue = None

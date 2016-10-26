@@ -7,6 +7,7 @@ from tempfile import NamedTemporaryFile
 import re
 import sys
 import os
+import socket
 import math
 from pyactiveresource.activeresource import ActiveResource
 from pyactiveresource.connection import ResourceNotFound
@@ -56,7 +57,7 @@ class HamsterTimeLog(object):
                              'time': minutes,
                              'description': fact.activity,
                              'activity': default_activity.get('name', 'none'),
-                             'comments': '; '.join(loginfo.get(ticket, [])),
+                             'comments': '. '.join(loginfo.get(ticket, [])),
                              'category': fact.category,
                              'tags': fact.tags,
                              'project': ''})
@@ -162,7 +163,7 @@ def make_row(entry, activities):
     return ['1',
             entry['description'].encode('utf-8'),
             format_spent_time(entry['time']),
-            act_name,
+            act_name.encode('utf-8'),
             '%04d' % entry['issue_id'],
             entry['project'].encode('utf-8'),
             entry['comments'].encode('utf-8'),
@@ -174,14 +175,14 @@ def make_table(rows):
     columns = zip(*rows)
     max_lens = [max([len(entry) for entry in column]) for column in columns]
     out_strs = []
-    divider = u'+%s+' % u'+'.join(
-        [u'-' * (max_len + 2) for max_len in max_lens]
+    divider = '+%s+' % '+'.join(
+        ['-' * (max_len + 2) for max_len in max_lens]
     )
     for row in rows:
         vals = []
         for i in range(len(row)):
-            vals.append(u' %s ' % pad(row[i], max_lens[i]))
-        row_str = u'|%s|' % u'|'.join(vals)
+            vals.append(' %s ' % pad(row[i].replace('|', ' '), max_lens[i]))
+        row_str = '|%s|' % '|'.join(vals)
         out_strs.append(divider)
         out_strs.append(row_str)
 
@@ -203,22 +204,22 @@ def write_to_file(bookings, spent_on, activities, file_name=None):
     summary_time = min(
         datetime.now(),
         (spent_on + timedelta(1) - timedelta(0, 1)))
-    tmpfile.write(u'#+BEGIN: clocktable :maxlevel 2 :scope file\n')
-    tmpfile.write(u'Clock summary at [' +
+    tmpfile.write('#+BEGIN: clocktable :maxlevel 2 :scope file\n')
+    tmpfile.write('Clock summary at [' +
                   summary_time.strftime('%Y-%m-%d %a %H:%M') + u']\n')
     tmpfile.write('\n')
 
     rows = []
 
     sum = get_time_sum(bookings)
-    rows.append([' ', u'*Total time*', u'*%s*' % format_spent_time(sum), ' ',
+    rows.append([' ', '*Total time*', '*%s*' % format_spent_time(sum), ' ',
                  ' ', ' ', ' '])
     rows += [make_row(entry, activities) for entry in bookings]
     tmpfile.write(make_table(rows))
 
-    tmpfile.write(u'\n')
-    tmpfile.write(u'\n')
-    tmpfile.write(u'Available activities: %s\n' % u', '.join(
+    tmpfile.write('\n')
+    tmpfile.write('\n')
+    tmpfile.write('Available activities: %s\n' % ', '.join(
         [act['name'] for act in activities]))
     tmpfile.flush()
     return tmpfile
@@ -295,9 +296,13 @@ class Redmine(object):
         class Issue(RedmineResource):
             pass
 
+        class Projects(RedmineResource):
+            pass
+
         self.TimeEntry = TimeEntry
         self.Enumerations = Enumerations
         self.Issue = Issue
+        self.Projects = Projects
 
         try:
             self.activities = self.Enumerations.get('time_entry_activities')
@@ -335,16 +340,10 @@ class Redmine(object):
 
 class Tracking(object):
 
-    harvest_task_map = {
-        'Support': 'Development',
-        'Feature': 'Development',
-        'Tasks': 'Development',
-        'Bug': 'Bugfixing',
-    }
-
-    def __init__(self, redmine, harvest):
+    def __init__(self, redmine, harvest, project_mapping={}):
         self.redmine = redmine
         self.harvest = harvest
+        self.project_mapping = project_mapping
         self._projects = []
 
     @property
@@ -360,9 +359,9 @@ class Tracking(object):
 
     def book_harvest(self, bookings):
         projects_lookup = dict(
-            [(project[u'name'], project) for project in self.projects])
+            [(project[u'code'], project) for project in self.projects])
         for entry in bookings:
-            project = projects_lookup[entry['project']]
+            project = projects_lookup.get(entry['project'])
             project_id = project and project[u'id'] or -1
             tasks_lookup = dict(
                 [(task[u'name'], task) for task in project[u'tasks']])
@@ -381,7 +380,9 @@ class Tracking(object):
 
             self.harvest.add(
                 {'notes': '#{1} {2}: {0}'.format(
-                 entry['comments'], str(entry['issue_id']), issue_title),
+                    entry['comments'].encode('utf-8'),
+                    str(entry['issue_id']).encode('utf-8'),
+                    issue_title.encode('utf-8')),
                  'project_id': project_id,
                  'hours': str(entry['time'] / 60.),
                  'task_id': task_id,
@@ -390,12 +391,17 @@ class Tracking(object):
 
     def redmine_harvest_mapping(self, harvest_projects, project=None,
                                 tracker=None, contracts=[], description=''):
-        task = self.harvest_task_map.get(tracker, 'Development')
+        task = 'Development'
         if 'scrum' in description.lower():
             task = 'SCRUM Meetings'
+        if 'deployment' in description.lower():
+            task = 'Deployment'
+
         harvest_project = ''
         if project in harvest_projects:
             harvest_project = project
+        elif project in self.project_mapping:
+            harvest_project = self.project_mapping[project]
         elif project:
             part_matches = [
                 proj for proj in harvest_projects
@@ -416,14 +422,17 @@ class Tracking(object):
         # Because of harvest's limited filtering we want bugs in a separate project.
         if task == 'Bugfixing':
             if 'recensio' in harvest_project.lower():
-                harvest_project = 'Recensio Bugpool'
+                harvest_project = 'recensio-bugpool'
             if 'star' in harvest_project.lower():
-                harvest_project = 'Star Bugpool'
+                harvest_project = 'star-bugpool'
+        if not harvest_project:
+            print('No match for {0}, {1}, {2}, {3}'.format(
+                project, tracker, contracts, description))
         return (harvest_project, task)
 
 
     def get_harvest_target(self, entry):
-        harvest_projects = [project[u'name'] for project in self.projects]
+        harvest_projects = [project[u'code'] for project in self.projects]
 
         issue_no = entry['issue_id']
         issue = None
@@ -432,13 +441,19 @@ class Tracking(object):
         if issue_no > 0:
             try:
                 issue = self.redmine.Issue.get(issue_no)
-            except (ResourceNotFound, connection.Error):
+            except (ResourceNotFound, connection.Error, socket.error):
                 print('Could not find issue ' + str(issue_no))
 
         if issue is not None:
-            project = issue['project']['name'].decode('utf-8')
+            pid = issue['project']['id']
+            try:
+                project = self.redmine.Projects.get(pid)['identifier'].decode('utf-8')
+            except Exception as e:
+                print('Could not get project identifier: {0}; {1}'.format(
+                    issue['project']['name'], e))
+                project = ''
             contracts = [f.get('value', []) for f in issue['custom_fields'] if
-                        f['name'].startswith('Contracts')]
+                         f['name'].startswith('Contracts')]
 
         for tag in entry['tags']:
             if tag in harvest_projects:
@@ -511,9 +526,25 @@ class Octodon(object):
         else:
             harvest = None
 
-        self.tracking = Tracking(self.redmine, harvest)
+        if self.config.has_option('main', 'project-mapping'):
+            project_mapping = self.config.get('main', 'project-mapping')
+            project_mapping = project_mapping.split('\n')
+            project_mapping = dict([pair.split(' ')
+                                    for pair in project_mapping if pair])
+        else:
+            project_mapping = {}
 
-    def get_bookings(self, spent_on):
+        self.tracking = Tracking(self.redmine, harvest, project_mapping=project_mapping)
+
+    def get_bookings(self, spent_on, search_back=4):
+        bookings = None
+        for i in range(search_back):
+            bookings = self._get_bookings(spent_on - timedelta(i))
+            if bookings:
+                break
+        return spent_on - timedelta(i), bookings
+
+    def _get_bookings(self, spent_on):
         loginfo = {}
         for vcs_config in self.vcs_list:
             vcslog = vcs_config['class'](exe=vcs_config['exe'])
@@ -559,11 +590,11 @@ class Octodon(object):
                 spent_on, bookings = read_from_file(
                     sessionfile, activities=self.redmine.activities)
             else:
-                bookings = self.get_bookings(spent_on)
+                spent_on, bookings = self.get_bookings(spent_on)
                 bookings = clean_up_bookings(bookings)
             os.remove(sessionfile)
         else:
-            bookings = self.get_bookings(spent_on)
+            spent_on, bookings = self.get_bookings(spent_on)
             bookings = clean_up_bookings(bookings)
 
         finished = False
@@ -669,7 +700,7 @@ if __name__ == "__main__":
         elif re.match(r'[0-9]{8}$', args.date):
             spent_on = datetime.strptime(args.date, '%Y%m%d')
         else:
-            raise Esception('unrecognized date format: {0}'.format(
+            raise Exception('unrecognized date format: {0}'.format(
                 args.date))
 
     octodon = Octodon(config)

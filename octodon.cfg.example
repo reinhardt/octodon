@@ -4,6 +4,8 @@ vcs =
     git
     svn
 source = orgmode
+project-mapping =
+    project-1 my-project-i
 
 [orgmode]
 filename = /tmp/orgtest.org

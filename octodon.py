@@ -420,7 +420,7 @@ class Tracking(object):
                 if part_matches:
                     harvest_project = part_matches[0]
         # Because of harvest's limited filtering we want bugs in a separate project.
-        if task == 'Bugfixing':
+        if tracker == 'Bug':
             if 'recensio' in harvest_project.lower():
                 harvest_project = 'recensio-bugpool'
             if 'star' in harvest_project.lower():

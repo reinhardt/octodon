@@ -97,7 +97,7 @@ class VCSLog(object):
         logdict = mergewith
         for repo in repos:
             if not os.path.exists(repo):
-                print("Warning: Repository path does not exist: {0}".format(repo))
+                print("Warning: Repository path not found: {0}".format(repo))
                 continue
             os.chdir(repo)
             try:
@@ -155,7 +155,7 @@ def format_spent_time(time):
 
 
 def pad(string, length):
-    return string + ' ' * (length - len(string))
+    return string + ' ' * (length - len(string.decode('utf-8')))
 
 
 def make_row(entry, activities):
@@ -173,7 +173,7 @@ def make_row(entry, activities):
 def make_table(rows):
     rows = [['L', 'Headline', 'Time', 'Activity', 'iss', 'Project', 'Comments']] + rows
     columns = zip(*rows)
-    max_lens = [max([len(entry) for entry in column]) for column in columns]
+    max_lens = [max([len(entry.decode('utf-8')) for entry in column]) for column in columns]
     out_strs = []
     divider = '+%s+' % '+'.join(
         ['-' * (max_len + 2) for max_len in max_lens]
@@ -273,6 +273,10 @@ def clean_up_bookings(bookings):
                 bookings.remove(booking)
             else:
                 ignored_time += booking['time']
+    if ignored_time > 3. * 60.:
+        print('Warning: Ignored time is {0}'.format(ignored_time))
+    if removed_time > 30.:
+        print('Warning: Removed time is {0}'.format(removed_time))
     sum_time = get_time_sum(bookings) - ignored_time
     for booking in bookings:
         if booking['category'] == u'Work':
@@ -361,7 +365,7 @@ class Tracking(object):
         projects_lookup = dict(
             [(project[u'code'], project) for project in self.projects])
         for entry in bookings:
-            project = projects_lookup.get(entry['project'])
+            project = projects_lookup[entry['project']]
             project_id = project and project[u'id'] or -1
             tasks_lookup = dict(
                 [(task[u'name'], task) for task in project[u'tasks']])
@@ -394,14 +398,16 @@ class Tracking(object):
         task = 'Development'
         if 'scrum' in description.lower():
             task = 'SCRUM Meetings'
+        elif 'meeting' in description.lower():
+            task = 'Meeting'
         if 'deployment' in description.lower():
             task = 'Deployment'
 
         harvest_project = ''
-        if project in harvest_projects:
-            harvest_project = project
-        elif project in self.project_mapping:
+        if project in self.project_mapping:
             harvest_project = self.project_mapping[project]
+        elif project in harvest_projects:
+            harvest_project = project
         elif project:
             part_matches = [
                 proj for proj in harvest_projects
@@ -699,6 +705,8 @@ if __name__ == "__main__":
             spent_on = today + timedelta(int(args.date))
         elif re.match(r'[0-9]{8}$', args.date):
             spent_on = datetime.strptime(args.date, '%Y%m%d')
+        elif re.match(r'[0-9]{4}-[0-9]{2}-[0-9]{2}$', args.date):
+            spent_on = datetime.strptime(args.date, '%Y-%m-%d')
         else:
             raise Exception('unrecognized date format: {0}'.format(
                 args.date))

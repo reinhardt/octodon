@@ -6,6 +6,9 @@ vcs =
 source = orgmode
 project-mapping =
     project-1 my-project-i
+task-mapping =
+    meeting Meeting
+    call Project Management
 
 [orgmode]
 filename = /tmp/orgtest.org

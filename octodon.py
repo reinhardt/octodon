@@ -264,20 +264,27 @@ def read_from_file(filename, activities):
 def clean_up_bookings(bookings):
     removed_time = 0.0
     ignored_time = 0.0
+    removed_bookings = []
     for booking in bookings[:]:
         if booking['issue_id'] == -1:
             if booking['category'] == u'Work':
-                print('Removing {0} ({1})'.format(
-                    booking['description'], booking['time']))
                 removed_time += booking['time']
+                removed_bookings.append(booking)
                 bookings.remove(booking)
             else:
                 ignored_time += booking['time']
-    if ignored_time > 3. * 60.:
-        print('Warning: Ignored time is {0}'.format(ignored_time))
-    if removed_time > 30.:
-        print('Warning: Removed time is {0}'.format(removed_time))
     sum_time = get_time_sum(bookings) - ignored_time
+
+    if ignored_time > 3. * 60.:
+        print('*** Warning: Ignored time is {0} {1}'.format(
+            ignored_time, format_spent_time(ignored_time)))
+    if sum_time and (removed_time / sum_time) > .1:
+        print('*** Warning: Removed time is {0} ({1}) ({2:.2f}%)'.format(
+            removed_time, format_spent_time(removed_time), removed_time / sum_time * 100))
+        for booking in sorted(removed_bookings, key=lambda b: b['time'], reverse=True):
+            print('    Removed {0} ({1:.0f})'.format(
+                booking['description'], booking['time']))
+
     for booking in bookings:
         if booking['category'] == u'Work':
             booking['time'] += removed_time * booking['time'] / sum_time
@@ -344,20 +351,25 @@ class Redmine(object):
 
 class Tracking(object):
 
-    def __init__(self, redmine, harvest, project_mapping={}):
+    def __init__(self, redmine, harvest, project_mapping={}, task_mapping={}):
         self.redmine = redmine
         self.harvest = harvest
         self.project_mapping = project_mapping
+        self.task_mapping = task_mapping
         self._projects = []
 
     @property
     def projects(self):
         if not self._projects:
+            harvest_data = {}
             try:
-                self._projects = self.harvest.get_day()['projects']
+                harvest_data = self.harvest.get_day()
+                self._projects = harvest_data['projects']
             except Exception as e:
                 print('Could not get harvest projects: {0}: {1}'.format(
                     e.__class__.__name__, e))
+                if u'message' in harvest_data:
+                    print(harvest_data[u'message'])
                 self._projects = []
         return self._projects
 
@@ -396,12 +408,10 @@ class Tracking(object):
     def redmine_harvest_mapping(self, harvest_projects, project=None,
                                 tracker=None, contracts=[], description=''):
         task = 'Development'
-        if 'scrum' in description.lower():
-            task = 'SCRUM Meetings'
-        elif 'meeting' in description.lower():
-            task = 'Meeting'
-        if 'deployment' in description.lower():
-            task = 'Deployment'
+        for key, value in self.task_mapping.items():
+            if key in description.lower():
+                task = value
+                break
 
         harvest_project = ''
         if project in self.project_mapping:
@@ -431,7 +441,7 @@ class Tracking(object):
                 harvest_project = 'recensio-bugpool'
             if 'star' in harvest_project.lower():
                 harvest_project = 'star-bugpool'
-        if not harvest_project:
+        if not harvest_project and (project or tracker or contracts):
             print('No match for {0}, {1}, {2}, {3}'.format(
                 project, tracker, contracts, description))
         return (harvest_project, task)
@@ -540,7 +550,20 @@ class Octodon(object):
         else:
             project_mapping = {}
 
-        self.tracking = Tracking(self.redmine, harvest, project_mapping=project_mapping)
+        if self.config.has_option('main', 'task-mapping'):
+            task_mapping = self.config.get('main', 'task-mapping')
+            task_mapping = task_mapping.split('\n')
+            task_mapping = dict([pair.split(' ', 1)
+                                 for pair in task_mapping if pair])
+        else:
+            task_mapping = {}
+
+        self.tracking = Tracking(
+            self.redmine,
+            harvest,
+            project_mapping=project_mapping,
+            task_mapping=task_mapping,
+        )
 
     def get_bookings(self, spent_on, search_back=4):
         bookings = None
@@ -574,7 +597,7 @@ class Octodon(object):
                 entry['activity'] = task
         return bookings
 
-    def print_summary(self, bookings):
+    def check_issue_and_comment(self, bookings):
         no_issue_or_comment = [
             entry for entry in bookings
             if entry['issue_id'] < 0 or len(entry['comments']) <= 0]
@@ -582,6 +605,8 @@ class Octodon(object):
             rows = [make_row(entry, self.redmine.activities) for entry in no_issue_or_comment]
             print('Warning: No issue id and/or comments for the following entries:'
                 '\n{0}'.format(make_table(rows)))
+
+    def print_summary(self, bookings):
         total_time = get_time_sum(bookings)
         total_hours = total_time / 60.
         print('total hours: %.2f (%s)' % (
@@ -604,7 +629,13 @@ class Octodon(object):
             bookings = clean_up_bookings(bookings)
 
         finished = False
-        edit = True
+        edit = False
+        tempfile = write_to_file(
+            bookings,
+            spent_on,
+            self.redmine.activities,
+            file_name=sessionfile)
+
         while not finished:
             if edit:
                 tempfile = write_to_file(
@@ -618,11 +649,12 @@ class Octodon(object):
                 spent_on, bookings = read_from_file(
                     tempfile.name, self.redmine.activities)
                 tempfile.close()
+                self.check_issue_and_comment(bookings)
 
             self.print_summary(bookings)
             action = raw_input(
-                '(e)dit again/book (r)edmine/book (h)arvest/(b)ook all/'
-                '(q)uit/(Q)uit and discard session? [e] ')
+                '(e)dit/book (r)edmine/book (h)arvest/(b)ook all/'
+                '(f)etch again/(q)uit/(Q)uit and discard session? [e] ')
 
             if bookings and action.lower() in ['b', 'r']:
                 try:
@@ -638,6 +670,12 @@ class Octodon(object):
                     print('Error while booking - '
                           '%s: %s' % (e.__class__.__name__, e))
                 edit = False
+
+            if action == 'f':
+                old_bookings = bookings[:]
+                spent_on, bookings = self.get_bookings(spent_on)
+                bookings = clean_up_bookings(bookings)
+                import ipdb; ipdb.set_trace()
 
             if action == 'q':
                 finished = True

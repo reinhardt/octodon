@@ -63,21 +63,21 @@ class MockIssue(object):
     def get(issue):
         issues = {
             12345: {
-                'project': {'id': '22', 'name': 'Cynaptic'},
+                'project': MockRedmine.Projects['22'],
                 'tracker': {'id': '3', 'name': 'Support'},
                 'subject': u'Create user list',
                 'custom_fields': {},
             },
             12346: {
-                'project': {'id': '23', 'name': 'RRZZAA'},
+                'project': MockRedmine.Projects['23'],
                 'tracker': {'id': '2', 'name': 'Feature'},
                 'subject': u'External API improvement',
                 'custom_fields': {},
             },
             12347: {
-                'project': {'id': '23', 'name': 'Frolick'},
-                'tracker': {'id': '1', 'name': 'Bug'},
-                'subject': u'GUI crashes',
+                'project': {'id': '24', 'name': 'Frolick'},
+                'tracker': {'id': '1', 'name': 'Support'},
+                'subject': u'Strategy Meeting',
                 'custom_fields': {},
             },
         }
@@ -88,19 +88,23 @@ class MockIssue(object):
 
 class MockRedmine(object):
     Issue = MockIssue
+    Projects = {
+        '22': {'id': '22', 'name': 'Cynaptic', 'identifier': 'cynaptic_3000'},
+        '23': {'id': '23', 'name': 'RRZZAA', 'identifier': 'rrzzaa'},
+    }
 
 
 class TestOctodon(unittest.TestCase):
 
-    def _make_booking(self, issue_id, project=''):
+    def _make_booking(self, issue_id, project='', description=''):
         booking = {
             'issue_id': issue_id,
             'spent_on': date(2012, 1, 1),
             'time': 345.,
-            'description': u'Extended API',
+            'description': description or u'Extended API',
             'activity': u'Development',
             'project': project,
-            'comments': u'Extended API',
+            'comments': description or u'Extended API',
             'hours': 5.75,
             'category': 'Work',
             'tags': [],
@@ -110,7 +114,7 @@ class TestOctodon(unittest.TestCase):
     def test_book_harvest(self):
         harvest = MockHarvest()
         bookings = [
-            {'project': u'Cynaptic 3000',
+            {'project': u'cynaptic_3000',
              'activity': u'Development',
              'comments': u'Extended API',
              'time': 345.,
@@ -126,7 +130,9 @@ class TestOctodon(unittest.TestCase):
 
     def test_get_harvest_target(self):
         harvest = MockHarvest()
-        tracking = Tracking(MockRedmine(), harvest)
+        project_mapping = {u'cynaptic_3000': 'Cynaptic 3000'}
+        task_mapping = {u'meeting': u'Meeting'}
+        tracking = Tracking(MockRedmine(), harvest, project_mapping, task_mapping)
 
         #def mapping(harvest, project=None, tracker=None):
         #    projects = harvest.get_day()['projects']
@@ -146,11 +152,11 @@ class TestOctodon(unittest.TestCase):
         self.assertEqual(project, 'Cynaptic 3000')
         self.assertEqual(task, 'Development')
         project, task = tracking.get_harvest_target(self._make_booking(12346))
-        self.assertEqual(project, 'RRZZAA')
+        self.assertEqual(project, 'rrzzaa')
         self.assertEqual(task, 'Development')
-        project, task = tracking.get_harvest_target(self._make_booking(12347))
+        project, task = tracking.get_harvest_target(self._make_booking(12347, description=u'Strategy Meeting'))
         self.assertEqual(project, '')
-        self.assertEqual(task, 'Bugfixing')
+        self.assertEqual(task, 'Meeting')
         project, task = tracking.get_harvest_target(self._make_booking(55555))
         self.assertEqual(project, '')
 

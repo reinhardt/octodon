@@ -1,2 +1,3 @@
 pyactiveresource
 python-harvest
+jira

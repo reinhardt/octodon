@@ -9,13 +9,17 @@ import sys
 import os
 import socket
 import math
+from jira import JIRA
+from jira import JIRAError
 from pyactiveresource.activeresource import ActiveResource
 from pyactiveresource.connection import ResourceNotFound
 from pyactiveresource import connection
 
 
-ticket_pattern = re.compile('#([0-9]+)')
-ref_pattern = re.compile('(?:    )?(.*)#([0-9]+)')
+ticket_pattern = re.compile('#([A-Z0-9-]+)')
+ticket_pattern_redmine = re.compile('#?([0-9]+)')
+ticket_pattern_jira = re.compile('#?([A-Z0-9]+-[0-9]+)')
+ref_pattern = re.compile('(?:    )?(.*)#([A-Z0-9-]+)')
 ref_keyword_pattern = re.compile('([Rr]efs |[Ff]ixes )$')
 
 
@@ -29,7 +33,7 @@ def get_default_activity(activities):
 def get_ticket_no(strings):
     tickets = [ticket_pattern.search(s).group(1) for s in strings
                if ticket_pattern.search(s)]
-    return len(tickets) and int(tickets[0]) or -1
+    return len(tickets) and tickets[0] or None
 
 
 class HamsterTimeLog(object):
@@ -89,7 +93,7 @@ class VCSLog(object):
         for match in matches:
             comment = ref_keyword_pattern.sub('', match.group(1))
             comment = comment.strip(' ,').strip(' .')
-            logdict.setdefault(int(match.group(2)), []).append(comment)
+            logdict.setdefault(match.group(2), []).append(comment)
         return logdict
 
 
@@ -164,7 +168,7 @@ def make_row(entry, activities):
             entry['description'].encode('utf-8'),
             format_spent_time(entry['time']),
             act_name.encode('utf-8'),
-            '%04d' % entry['issue_id'],
+            entry['issue_id'] or '',
             entry['project'].encode('utf-8'),
             entry['comments'].encode('utf-8'),
             ]
@@ -250,7 +254,7 @@ def read_from_file(filename, activities):
         columns = columns + default_columns[len(columns):]
         hours, minutes = columns[2].split(':')
         spenttime = int(hours) * 60 + int(minutes)
-        bookings.append({'issue_id': int(columns[4]),
+        bookings.append({'issue_id': columns[4],
                          'spent_on': spentdate.strftime('%Y-%m-%d'),
                          'time': float(spenttime),
                          'comments': columns[6].decode('utf-8'),
@@ -266,7 +270,7 @@ def clean_up_bookings(bookings):
     ignored_time = 0.0
     removed_bookings = []
     for booking in bookings[:]:
-        if booking['issue_id'] == -1:
+        if booking['issue_id'] is None:
             if booking['category'] == u'Work':
                 removed_time += booking['time']
                 removed_bookings.append(booking)
@@ -324,7 +328,9 @@ class Redmine(object):
     def book_redmine(self, bookings):
         default_activity = get_default_activity(self.activities)
         for entry in bookings:
-            if entry['issue_id'] <= 0:
+            if not ticket_pattern_redmine.match(entry['issue_id']):
+                continue
+            if entry['issue_id'] is None:
                 print("No valid issue id, skipping entry (%s)" %
                     entry['description'])
                 continue
@@ -349,10 +355,41 @@ class Redmine(object):
                         field, u','.join(msgs), rm_entry['comments']))
 
 
+class Jira(object):
+    def __init__(self, url, user, password):
+        self.jira = JIRA(url, auth=(user, password))
+
+    def book_jira(self, bookings):
+        for entry in bookings:
+            if not ticket_pattern_jira.match(entry['issue_id']):
+                continue
+            rm_entry = entry.copy()
+
+            rm_entry['hours'] = rm_entry['time'] / 60.
+            del rm_entry['time']
+
+            if 'description' in rm_entry:
+                del rm_entry['description']
+            if 'activity' in rm_entry:
+                del rm_entry['activity']
+
+            try:
+                self.jira.add_worklog(
+                    issue=entry['issue_id'],
+                    timeSpent=entry['time'],
+                    started=datetime.strptime(entry['spent_on'], '%Y-%m-%d'),
+                    comment=entry['comments'],
+                )
+            except JIRAError as je:
+                print(u'{0}: {1} ({2})'.format(
+                    je.status_code, je.text, rm_entry['comments']))
+
+
 class Tracking(object):
 
-    def __init__(self, redmine, harvest, project_mapping={}, task_mapping={}):
+    def __init__(self, redmine=None, jira=None, harvest=None, project_mapping={}, task_mapping={}):
         self.redmine = redmine
+        self.jira = jira
         self.harvest = harvest
         self.project_mapping = project_mapping
         self.task_mapping = task_mapping
@@ -384,18 +421,24 @@ class Tracking(object):
             task = tasks_lookup.get(entry['activity'])
             task_id = task and task[u'id'] or -1
 
-            issue = None
-            if entry['issue_id'] > 0:
-                try:
-                    issue = self.redmine.Issue.get(entry['issue_id'])
-                except (ResourceNotFound, connection.Error):
-                    print('Could not find issue ' + str(entry['issue_id']))
-
-            if issue is not None:
-                issue_title = issue['subject']
+            issue_title = ''
+            if entry['issue_id'] is not None:
+                if ticket_pattern_jira.match(entry['issue_id']) and self.jira:
+                    try:
+                        issue = self.jira.jira.issue(entry['issue_id'])
+                        issue_title = issue.fields.summary
+                    except JIRAError as je:
+                        print(u'Could not find issue {0}: {1} - {2}'.format(
+                            str(entry['issue_id']), je.status_code, je.text, ))
+                if not issue_title and self.redmine:
+                    try:
+                        issue = self.redmine.Issue.get(int(entry['issue_id']))
+                        issue_title = issue['subject']
+                    except (ResourceNotFound, connection.Error):
+                        print('Could not find issue ' + str(entry['issue_id']))
 
             self.harvest.add(
-                {'notes': '#{1} {2}: {0}'.format(
+                {'notes': '[#{1}] {2}: {0}'.format(
                     entry['comments'].encode('utf-8'),
                     str(entry['issue_id']).encode('utf-8'),
                     issue_title.encode('utf-8')),
@@ -454,22 +497,33 @@ class Tracking(object):
         issue = None
         project = ''
         contracts = []
-        if issue_no > 0:
-            try:
-                issue = self.redmine.Issue.get(issue_no)
-            except (ResourceNotFound, connection.Error, socket.error):
-                print('Could not find issue ' + str(issue_no))
+        if issue_no is not None:
+            if ticket_pattern_jira.match(issue_no) and self.jira:
+                try:
+                    issue = self.jira.jira.issue(issue_no)
+                except JIRAError as je:
+                    print(u'Could not find issue {0}: {1} - {2}'.format(
+                        str(issue_no), je.status_code, je.text, ))
+            elif self.redmine:
+                try:
+                    issue = self.redmine.Issue.get(issue_no)
+                except (ResourceNotFound, connection.Error, socket.error):
+                    print('Could not find issue ' + str(issue_no))
 
         if issue is not None:
-            pid = issue['project']['id']
-            try:
-                project = self.redmine.Projects.get(pid)['identifier'].decode('utf-8')
-            except Exception as e:
-                print('Could not get project identifier: {0}; {1}'.format(
-                    issue['project']['name'], e))
-                project = ''
-            contracts = [f.get('value', []) for f in issue['custom_fields'] if
-                         f['name'].startswith('Contracts')]
+            if ticket_pattern_jira.match(issue_no) and self.jira:
+                project = issue.fields.project.key
+                contracts = []
+            elif self.redmine:
+                pid = issue['project']['id']
+                try:
+                    project = self.redmine.Projects.get(pid)['identifier'].decode('utf-8')
+                except Exception as e:
+                    print('Could not get project identifier: {0}; {1}'.format(
+                        issue['project']['name'], e))
+                    project = ''
+                contracts = [f.get('value', []) for f in issue['custom_fields'] if
+                            f['name'].startswith('Contracts')]
 
         for tag in entry['tags']:
             if tag in harvest_projects:
@@ -477,7 +531,11 @@ class Tracking(object):
         if entry['category'] in harvest_projects:
             project = entry['category']
 
-        tracker = issue and issue['tracker']['name']
+        tracker = None
+        if issue_no and ticket_pattern_jira.match(issue_no) and self.jira:
+            tracker = issue and issue.fields.issuetype.name
+        elif self.redmine:
+            tracker = issue and issue['tracker']['name']
 
         return self.redmine_harvest_mapping(
             harvest_projects,
@@ -497,10 +555,27 @@ class Octodon(object):
             filename = config.get('orgmode', 'filename')
             self.time_log = OrgModeTimeLog(filename)
 
-        self.redmine = Redmine(
-            config.get('redmine', 'url'),
-            config.get('redmine', 'user'),
-            config.get('redmine', 'pass'))
+        self.redmine = None
+        if config.has_section('redmine'):
+            if config.has_option('redmine', 'password_command'):
+                cmd = config.get('redmine', 'password_command')
+                password = subprocess.check_output(cmd.split(' ')).strip().decode("utf-8")
+                config.set('redmine', 'pass', password)
+            self.redmine = Redmine(
+                config.get('redmine', 'url'),
+                config.get('redmine', 'user'),
+                config.get('redmine', 'pass'))
+
+        self.jira = None
+        if config.has_section('jira'):
+            if config.has_option('jira', 'password_command'):
+                cmd = config.get('jira', 'password_command')
+                password = subprocess.check_output(cmd.split(' ')).strip().decode("utf-8")
+                config.set('jira', 'pass', password)
+            self.jira = Jira(
+                config.get('jira', 'url'),
+                config.get('jira', 'user'),
+                config.get('jira', 'pass'))
 
         vcs_class = {
             'git': GitLog,
@@ -535,6 +610,10 @@ class Octodon(object):
 
         if config.has_section('harvest'):
             from harvest import Harvest
+            if config.has_option('harvest', 'password_command'):
+                cmd = config.get('harvest', 'password_command')
+                password = subprocess.check_output(cmd.split(' ')).strip().decode("utf-8")
+                config.set('harvest', 'pass', password)
             harvest = Harvest(
                     config.get('harvest', 'url'),
                     config.get('harvest', 'user'),
@@ -559,8 +638,9 @@ class Octodon(object):
             task_mapping = {}
 
         self.tracking = Tracking(
-            self.redmine,
-            harvest,
+            redmine=self.redmine,
+            jira=self.jira,
+            harvest=harvest,
             project_mapping=project_mapping,
             task_mapping=task_mapping,
         )
@@ -586,10 +666,11 @@ class Octodon(object):
             except NotImplemented:
                 print('Unrecognized vcs: %s' % vcs_config['name'])
 
+        activities = self.redmine and self.redmine.activities or []
         bookings = self.time_log.get_timeinfo(
             date=spent_on,
             loginfo=loginfo,
-            activities=self.redmine.activities)
+            activities=activities)
         if self.tracking.harvest is not None:
             for entry in bookings:
                 project, task = self.tracking.get_harvest_target(entry)
@@ -600,9 +681,10 @@ class Octodon(object):
     def check_issue_and_comment(self, bookings):
         no_issue_or_comment = [
             entry for entry in bookings
-            if entry['issue_id'] < 0 or len(entry['comments']) <= 0]
+            if entry['issue_id'] is None or len(entry['comments']) <= 0]
+        activities = self.redmine and self.redmine.activities or []
         if len(no_issue_or_comment) > 0:
-            rows = [make_row(entry, self.redmine.activities) for entry in no_issue_or_comment]
+            rows = [make_row(entry, activities) for entry in no_issue_or_comment]
             print('Warning: No issue id and/or comments for the following entries:'
                 '\n{0}'.format(make_table(rows)))
 
@@ -615,11 +697,12 @@ class Octodon(object):
     def __call__(self, spent_on):
         sessionfile = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                 '.octodon_session_timelog')
+        activities = self.redmine and self.redmine.activities or []
         if os.path.exists(sessionfile):
             continue_session = raw_input('Continue existing session? [Y/n] ')
             if not continue_session.lower() == 'n':
                 spent_on, bookings = read_from_file(
-                    sessionfile, activities=self.redmine.activities)
+                    sessionfile, activities=activities)
             else:
                 spent_on, bookings = self.get_bookings(spent_on)
                 bookings = clean_up_bookings(bookings)
@@ -633,7 +716,7 @@ class Octodon(object):
         tempfile = write_to_file(
             bookings,
             spent_on,
-            self.redmine.activities,
+            activities,
             file_name=sessionfile)
 
         while not finished:
@@ -641,19 +724,19 @@ class Octodon(object):
                 tempfile = write_to_file(
                     bookings,
                     spent_on,
-                    self.redmine.activities,
+                    activities,
                     file_name=sessionfile)
                 subprocess.check_call(
                     [config.get('main', 'editor') + ' ' + tempfile.name],
                     shell=True)
                 spent_on, bookings = read_from_file(
-                    tempfile.name, self.redmine.activities)
+                    tempfile.name, activities)
                 tempfile.close()
                 self.check_issue_and_comment(bookings)
 
             self.print_summary(bookings)
             action = raw_input(
-                '(e)dit/book (r)edmine/book (h)arvest/(b)ook all/'
+                '(e)dit/book (r)edmine/book (j)ira/book (h)arvest/(b)ook all/'
                 '(f)etch again/(q)uit/(Q)uit and discard session? [e] ')
 
             if bookings and action.lower() in ['b', 'r']:
@@ -661,6 +744,13 @@ class Octodon(object):
                     self.redmine.book_redmine(bookings)
                 except Exception as e:
                     print('Error while booking - comments too long? Error was: '
+                          '%s: %s' % (e.__class__.__name__, e))
+                edit = False
+            if bookings and action.lower() in ['b', 'j']:
+                try:
+                    self.jira.book_jira(bookings)
+                except Exception as e:
+                    print('Error while booking - '
                           '%s: %s' % (e.__class__.__name__, e))
                 edit = False
             if bookings and action.lower() in ['b', 'h']:
@@ -710,7 +800,7 @@ def get_config(cfgfile):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description='Extract time tracking data '
-        'from hamster or emacs org mode and book it to redmine')
+        'from hamster or emacs org mode and book it to redmine/jira/harvest')
     parser.add_argument(
         '--date',
         type=str,

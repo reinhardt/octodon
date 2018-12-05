@@ -7,6 +7,7 @@ with import <nixpkgs> {}; {
       unset http_proxy
       export GIT_SSL_CAINFO=/etc/ssl/certs/ca-bundle.crt
       export SSL_CERT_FILE=${cacert}/etc/ssl/certs/ca-bundle.crt
+      export LIBRARY_PATH=${pkgs.openssl.out}/lib
     '';
   };
 }

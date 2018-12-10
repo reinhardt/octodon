@@ -62,19 +62,19 @@ class MockIssue(object):
     @staticmethod
     def get(issue):
         issues = {
-            12345: {
+            '12345': {
                 'project': MockRedmine.Projects['22'],
                 'tracker': {'id': '3', 'name': 'Support'},
                 'subject': u'Create user list',
                 'custom_fields': {},
             },
-            12346: {
+            '12346': {
                 'project': MockRedmine.Projects['23'],
                 'tracker': {'id': '2', 'name': 'Feature'},
                 'subject': u'External API improvement',
                 'custom_fields': {},
             },
-            12347: {
+            '12347': {
                 'project': {'id': '24', 'name': 'Frolick'},
                 'tracker': {'id': '1', 'name': 'Support'},
                 'subject': u'Strategy Meeting',
@@ -120,10 +120,10 @@ class TestOctodon(unittest.TestCase):
              'time': 345.,
              'hours': 5.75,
              'spent_on': date(2012, 1, 1),
-             'issue_id': 12345
+             'issue_id': '12345',
              },
         ]
-        Tracking(MockRedmine(), harvest).book_harvest(bookings)
+        Tracking(redmine=MockRedmine(), harvest=harvest).book_harvest(bookings)
         self.assertEqual(len(harvest.entries), 1)
         self.assertEqual(harvest.entries[0]['task_id'], 3982288)
         self.assertEqual(harvest.entries[0]['project_id'], 7585112)
@@ -132,7 +132,12 @@ class TestOctodon(unittest.TestCase):
         harvest = MockHarvest()
         project_mapping = {u'cynaptic_3000': 'Cynaptic 3000'}
         task_mapping = {u'meeting': u'Meeting'}
-        tracking = Tracking(MockRedmine(), harvest, project_mapping, task_mapping)
+        tracking = Tracking(
+            redmine=MockRedmine(),
+            harvest=harvest,
+            project_mapping=project_mapping,
+            task_mapping=task_mapping,
+        )
 
         #def mapping(harvest, project=None, tracker=None):
         #    projects = harvest.get_day()['projects']
@@ -148,16 +153,16 @@ class TestOctodon(unittest.TestCase):
         #        harvest_project = 'Cynaptic 3000'
         #    return (harvest_project, task)
 
-        project, task = tracking.get_harvest_target(self._make_booking(12345))
+        project, task = tracking.get_harvest_target(self._make_booking('12345'))
         self.assertEqual(project, 'Cynaptic 3000')
         self.assertEqual(task, 'Development')
-        project, task = tracking.get_harvest_target(self._make_booking(12346))
+        project, task = tracking.get_harvest_target(self._make_booking('12346'))
         self.assertEqual(project, 'rrzzaa')
         self.assertEqual(task, 'Development')
-        project, task = tracking.get_harvest_target(self._make_booking(12347, description=u'Strategy Meeting'))
+        project, task = tracking.get_harvest_target(self._make_booking('12347', description=u'Strategy Meeting'))
         self.assertEqual(project, '')
         self.assertEqual(task, 'Meeting')
-        project, task = tracking.get_harvest_target(self._make_booking(55555))
+        project, task = tracking.get_harvest_target(self._make_booking('55555'))
         self.assertEqual(project, '')
 
     def test_format_spent_time(self):
@@ -176,7 +181,7 @@ class TestOctodon(unittest.TestCase):
              'description': u'Extended API',
              'time': 345.,
              'spent_on': date(2012, 1, 1).strftime('%Y-%m-%d'),
-             'issue_id': 12345
+             'issue_id': '12345',
              },
         ]
         spent_on = datetime(2012, 1, 1)
@@ -192,7 +197,7 @@ class TestOctodon(unittest.TestCase):
              'category': u'Work',
              'comments': '',
              'description': u'book time',
-             'issue_id': -1,
+             'issue_id': None,
              'project': '',
              'spent_on': date(2016, 5, 31),
              'tags': [],
@@ -201,7 +206,7 @@ class TestOctodon(unittest.TestCase):
              'category': u'Work',
              'comments': '',
              'description': u'Gemeinsame Durchsuchbarkeit #13568',
-             'issue_id': 13568,
+             'issue_id': '13568',
              'project': u'T\xf6chter',
              'spent_on': date(2016, 5, 31),
              'tags': [],
@@ -210,7 +215,7 @@ class TestOctodon(unittest.TestCase):
              'category': u'Day-to-day',
              'comments': '',
              'description': u'break',
-             'issue_id': -1,
+             'issue_id': None,
              'project': '',
              'spent_on': date(2016, 5, 31),
              'tags': [],
@@ -219,7 +224,7 @@ class TestOctodon(unittest.TestCase):
              'category': u'Work',
              'comments': '',
              'description': u'daily scrum #13572',
-             'issue_id': 13572,
+             'issue_id': '13572',
              'project': u'Internals',
              'spent_on': date(2016, 5, 31),
              'tags': [],
@@ -228,7 +233,7 @@ class TestOctodon(unittest.TestCase):
              'category': u'Work',
              'comments': '',
              'description': u'Suche liefert "Unzureichende Berechtigungen" #13678',
-             'issue_id': 13678,
+             'issue_id': '13678',
              'project': u'T\xf6chter',
              'spent_on': date(2016, 5, 31),
              'tags': [],
@@ -242,7 +247,7 @@ class TestOctodon(unittest.TestCase):
                  'category': u'Work',
                  'comments': '',
                  'description': u'Gemeinsame Durchsuchbarkeit #13568',
-                 'issue_id': 13568,
+                 'issue_id': '13568',
                  'project': u'T\xf6chter',
                  'spent_on': date(2016, 5, 31),
                  'tags': [],
@@ -251,7 +256,7 @@ class TestOctodon(unittest.TestCase):
                  'category': u'Day-to-day',
                  'comments': '',
                  'description': u'break',
-                 'issue_id': -1,
+                 'issue_id': None,
                  'project': '',
                  'spent_on': date(2016, 5, 31),
                  'tags': [],
@@ -260,7 +265,7 @@ class TestOctodon(unittest.TestCase):
                  'category': u'Work',
                  'comments': '',
                  'description': u'daily scrum #13572',
-                 'issue_id': 13572,
+                 'issue_id': '13572',
                  'project': u'Internals',
                  'spent_on': date(2016, 5, 31),
                  'tags': [],
@@ -269,7 +274,7 @@ class TestOctodon(unittest.TestCase):
                  'category': u'Work',
                  'comments': '',
                  'description': u'Suche liefert "Unzureichende Berechtigungen" #13678',
-                 'issue_id': 13678,
+                 'issue_id': '13678',
                  'project': u'T\xf6chter',
                  'spent_on': date(2016, 5, 31),
                  'tags': [],

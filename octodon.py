@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+from cmd import Cmd
 from datetime import datetime, timedelta
 from ConfigParser import SafeConfigParser
 import argparse
@@ -226,7 +227,9 @@ def write_to_file(bookings, spent_on, activities, file_name=None):
     tmpfile.write('Available activities: %s\n' % ', '.join(
         [act['name'] for act in activities]))
     tmpfile.flush()
-    return tmpfile
+    new_file_name = tmpfile.name
+    tmpfile.close()
+    return new_file_name
 
 
 def read_from_file(filename, activities):
@@ -545,8 +548,9 @@ class Tracking(object):
             description=entry['description'])
 
 
-class Octodon(object):
-    def __init__(self, config):
+class Octodon(Cmd):
+    def __init__(self, config, spent_on, *args):
+        Cmd.__init__(self, *args)
         self.config = get_config(cfgfile)
 
         if config.get('main', 'source') == 'hamster':
@@ -645,6 +649,30 @@ class Octodon(object):
             task_mapping=task_mapping,
         )
 
+        self.prompt = 'octodon> '
+        self.sessionfile = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)),
+            '.octodon_session_timelog')
+        activities = self.redmine and self.redmine.activities or []
+        if os.path.exists(self.sessionfile):
+            continue_session = raw_input('Continue existing session? [Y/n] ')
+            if not continue_session.lower() == 'n':
+                spent_on, self.bookings = read_from_file(
+                    self.sessionfile, activities=activities)
+            else:
+                spent_on, self.bookings = self.get_bookings(spent_on)
+                self.bookings = clean_up_bookings(self.bookings)
+            os.remove(self.sessionfile)
+        else:
+            spent_on, self.bookings = self.get_bookings(spent_on)
+            self.bookings = clean_up_bookings(self.bookings)
+
+        self.sessionfile = write_to_file(
+            self.bookings,
+            spent_on,
+            activities,
+            file_name=self.sessionfile)
+
     def get_bookings(self, spent_on, search_back=4):
         bookings = None
         for i in range(search_back):
@@ -694,86 +722,66 @@ class Octodon(object):
         print('total hours: %.2f (%s)' % (
             total_hours, format_spent_time(total_time)))
 
-    def __call__(self, spent_on):
-        sessionfile = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                                '.octodon_session_timelog')
+    def postcmd(self, stop, line):
+        if not stop:
+            self.print_summary(self.bookings)
+        return stop
+
+    def do_edit(self, *args):
+        """ Edit the current time booking values in an editor. """
+        subprocess.check_call(
+            [config.get('main', 'editor') + ' ' + self.sessionfile],
+            shell=True)
         activities = self.redmine and self.redmine.activities or []
-        if os.path.exists(sessionfile):
-            continue_session = raw_input('Continue existing session? [Y/n] ')
-            if not continue_session.lower() == 'n':
-                spent_on, bookings = read_from_file(
-                    sessionfile, activities=activities)
-            else:
-                spent_on, bookings = self.get_bookings(spent_on)
-                bookings = clean_up_bookings(bookings)
-            os.remove(sessionfile)
-        else:
-            spent_on, bookings = self.get_bookings(spent_on)
-            bookings = clean_up_bookings(bookings)
+        spent_on, self.bookings = read_from_file(
+            self.sessionfile, activities)
+        self.check_issue_and_comment(self.bookings)
 
-        finished = False
-        edit = False
-        tempfile = write_to_file(
-            bookings,
-            spent_on,
-            activities,
-            file_name=sessionfile)
+    def do_redmine(self, *args):
+        """ Write current bookings to redmine. """
+        try:
+            self.redmine.book_redmine(self.bookings)
+        except Exception as e:
+            print('Error while booking - comments too long? Error was: '
+                    '%s: %s' % (e.__class__.__name__, e))
 
-        while not finished:
-            if edit:
-                tempfile = write_to_file(
-                    bookings,
-                    spent_on,
-                    activities,
-                    file_name=sessionfile)
-                subprocess.check_call(
-                    [config.get('main', 'editor') + ' ' + tempfile.name],
-                    shell=True)
-                spent_on, bookings = read_from_file(
-                    tempfile.name, activities)
-                tempfile.close()
-                self.check_issue_and_comment(bookings)
+    def do_jira(self, *args):
+        """ Write current bookings to jira. """
+        try:
+            self.jira.book_jira(self.bookings)
+        except Exception as e:
+            print('Error while booking - '
+                    '%s: %s' % (e.__class__.__name__, e))
 
-            self.print_summary(bookings)
-            action = raw_input(
-                '(e)dit/book (r)edmine/book (j)ira/book (h)arvest/(b)ook all/'
-                '(f)etch again/(q)uit/(Q)uit and discard session? [e] ')
+    def do_harvest(self, *args):
+        """ Write current bookings to harvest. """
+        try:
+            self.tracking.book_harvest(self.bookings)
+        except Exception as e:
+            print('Error while booking - '
+                    '%s: %s' % (e.__class__.__name__, e))
 
-            if bookings and action.lower() in ['b', 'r']:
-                try:
-                    self.redmine.book_redmine(bookings)
-                except Exception as e:
-                    print('Error while booking - comments too long? Error was: '
-                          '%s: %s' % (e.__class__.__name__, e))
-                edit = False
-            if bookings and action.lower() in ['b', 'j']:
-                try:
-                    self.jira.book_jira(bookings)
-                except Exception as e:
-                    print('Error while booking - '
-                          '%s: %s' % (e.__class__.__name__, e))
-                edit = False
-            if bookings and action.lower() in ['b', 'h']:
-                try:
-                    self.tracking.book_harvest(bookings)
-                except Exception as e:
-                    print('Error while booking - '
-                          '%s: %s' % (e.__class__.__name__, e))
-                edit = False
+    def do_book(self, *args):
+        """ Write current bookings to all configured targets. """
+        self.do_redmine()
+        self.do_jira()
+        self.do_harvest()
 
-            if action == 'f':
-                old_bookings = bookings[:]
-                spent_on, bookings = self.get_bookings(spent_on)
-                bookings = clean_up_bookings(bookings)
-                import ipdb; ipdb.set_trace()
+    def do_fetch(self, *args):
+        """ EXPERIMENTAL. Freshly fetch bookings from source. """
+        old_bookings = self.bookings[:]
+        spent_on, bookings = self.get_bookings(spent_on)
+        bookings = clean_up_bookings(bookings)
+        import ipdb; ipdb.set_trace()
 
-            if action == 'q':
-                finished = True
-            if action == 'Q':
-                finished = True
-                os.remove(sessionfile)
-            if action == 'e' or action == '':
-                edit = True
+    def do_exit(self, line):
+        return True
+
+    def do_quit(self, line):
+        return True
+
+    def do_EOF(self, line):
+        return True
 
 
 def get_config(cfgfile):
@@ -839,5 +847,5 @@ if __name__ == "__main__":
             raise Exception('unrecognized date format: {0}'.format(
                 args.date))
 
-    octodon = Octodon(config)
-    octodon(spent_on)
+    octodon = Octodon(config, spent_on)
+    octodon.cmdloop()

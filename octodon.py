@@ -549,7 +549,7 @@ class Tracking(object):
 
 
 class Octodon(Cmd):
-    def __init__(self, config, spent_on, *args):
+    def __init__(self, config, spent_on, new_session=False, *args):
         Cmd.__init__(self, *args)
         self.config = get_config(cfgfile)
 
@@ -652,11 +652,14 @@ class Octodon(Cmd):
         self.prompt = 'octodon> '
         self.sessionfile = os.path.join(
             os.path.dirname(os.path.abspath(__file__)),
-            '.octodon_session_timelog')
+            '.octodon_session_timelog.rst')
         activities = self.redmine and self.redmine.activities or []
         if os.path.exists(self.sessionfile):
-            continue_session = raw_input('Continue existing session? [Y/n] ')
-            if not continue_session.lower() == 'n':
+            start_new_session = (
+                new_session or
+                raw_input('Continue existing session? [Y/n] ').lower() == 'n'
+            )
+            if not start_new_session:
                 spent_on, self.bookings = read_from_file(
                     self.sessionfile, activities=activities)
             else:
@@ -819,6 +822,11 @@ if __name__ == "__main__":
         '-c',
         type=str,
         help='the configuration file to use for this session')
+    parser.add_argument(
+        '--new-session',
+        '-n',
+        action='store_true',
+        help='discard any existing session and start a new one')
     args = parser.parse_args()
 
     if args.config_file:
@@ -847,5 +855,5 @@ if __name__ == "__main__":
             raise Exception('unrecognized date format: {0}'.format(
                 args.date))
 
-    octodon = Octodon(config, spent_on)
+    octodon = Octodon(config, spent_on, new_session=args.new_session)
     octodon.cmdloop()

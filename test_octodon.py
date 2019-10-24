@@ -187,6 +187,8 @@ class TestOctodon(unittest.TestCase):
              'issue_id': '10763',
              },
         ]
+        if os.path.exists(CACHEFILE):
+            os.remove(CACHEFILE)
         tracking = Tracking(
             redmine=MockRedmine(),
             harvest=harvest,
@@ -201,7 +203,8 @@ class TestOctodon(unittest.TestCase):
         )
         project, task = tracking.get_harvest_target(
             self._make_booking('10763', description=u'Fixed encoding'))
-        self.assertEqual(project, 7585113)
+        self.assertEqual(project, 'rrzzaa')
+        os.remove(CACHEFILE)
 
     def test_format_spent_time(self):
         self.assertEqual(format_spent_time(300.), ' 5:00')

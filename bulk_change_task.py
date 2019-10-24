@@ -6,6 +6,7 @@ from datetime import timedelta
 from harvest import Harvest
 from octodon import get_config
 from pprint import pprint
+from functools import reduce
 
 
 def harvest_date_range(startdate, enddate):

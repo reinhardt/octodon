@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 from cmd import Cmd
 from datetime import datetime, timedelta
-from ConfigParser import SafeConfigParser
+from configparser import ConfigParser
 import argparse
 import subprocess
 from tempfile import NamedTemporaryFile
@@ -16,6 +16,7 @@ from jira import JIRAError
 from pyactiveresource.activeresource import ActiveResource
 from pyactiveresource.connection import ResourceNotFound
 from pyactiveresource import connection
+from functools import reduce
 
 
 ticket_pattern = re.compile('#([A-Z0-9-]+)')
@@ -161,25 +162,25 @@ def format_spent_time(time):
 
 
 def pad(string, length):
-    return string + ' ' * (length - len(string.decode('utf-8')))
+    return string + ' ' * (length - len(string))
 
 
 def make_row(entry, activities):
     act_name = entry['activity']
     return ['1',
-            entry['description'].encode('utf-8'),
+            entry['description'],
             format_spent_time(entry['time']),
-            act_name.encode('utf-8'),
+            act_name,
             entry['issue_id'] or '',
-            entry['project'].encode('utf-8'),
-            entry['comments'].encode('utf-8'),
+            entry['project'],
+            entry['comments'],
             ]
 
 
 def make_table(rows):
     rows = [['L', 'Headline', 'Time', 'Activity', 'iss', 'Project', 'Comments']] + rows
     columns = zip(*rows)
-    max_lens = [max([len(entry.decode('utf-8')) for entry in column]) for column in columns]
+    max_lens = [max([len(entry) for entry in column]) for column in columns]
     out_strs = []
     divider = '+%s+' % '+'.join(
         ['-' * (max_len + 2) for max_len in max_lens]
@@ -187,7 +188,12 @@ def make_table(rows):
     for row in rows:
         vals = []
         for i in range(len(row)):
-            vals.append(' %s ' % pad(row[i].replace('|', ' '), max_lens[i]))
+            vals.append(
+                ' %s ' % pad(
+                    row[i].replace('|', ' '),
+                    max_lens[i],
+                )
+            )
         row_str = '|%s|' % '|'.join(vals)
         out_strs.append(divider)
         out_strs.append(row_str)
@@ -235,15 +241,13 @@ def write_to_file(bookings, spent_on, activities, file_name=None):
 
 def read_from_file(filename, activities):
     tmpfile = open(filename, 'r')
-    data = tmpfile.readlines()
-    tmpfile.close()
     bookings = []
     spentdate = None
     default_activity = get_default_activity(activities)
     default_act_name = default_activity.get('name', '[noname]')
     default_columns = [1, '', '0:0', default_act_name, -1, '', '']
 
-    for line in data:
+    for line in tmpfile:
         if line.startswith('Clock summary at ['):
             splitdate = line[18:-2].split(' ')[0].split('-')
             spentdate = datetime(int(splitdate[0]),
@@ -261,11 +265,12 @@ def read_from_file(filename, activities):
         bookings.append({'issue_id': columns[4],
                          'spent_on': spentdate.strftime('%Y-%m-%d'),
                          'time': float(spenttime),
-                         'comments': columns[6].decode('utf-8'),
-                         'project': columns[5].decode('utf-8'),
-                         'description': columns[1].decode('utf-8'),
-                         'activity': columns[3].decode('utf-8'),
+                         'comments': columns[6],
+                         'project': columns[5],
+                         'description': columns[1],
+                         'activity': columns[3],
                          })
+    tmpfile.close()
     return spentdate, bookings
 
 
@@ -555,7 +560,7 @@ class Tracking(object):
             elif self.redmine:
                 pid = issue['project']['id']
                 try:
-                    project = self.redmine.Projects.get(pid)['identifier'].decode('utf-8')
+                    project = self.redmine.Projects.get(pid)['identifier']
                 except Exception as e:
                     print('Could not get project identifier: {0}; {1}'.format(
                         issue['project']['name'], e))
@@ -565,7 +570,7 @@ class Tracking(object):
 
         for tag in entry['tags']:
             if tag in harvest_projects:
-                project = tag.decode('utf-8')
+                project = tag
         if entry['category'] in harvest_projects:
             project = entry['category']
 
@@ -831,10 +836,10 @@ class Octodon(Cmd):
 
 
 def get_config(cfgfile):
-    config = SafeConfigParser()
+    config = ConfigParser()
     default_cfgfile = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                    'defaults.cfg')
-    config.readfp(open(default_cfgfile))
+    config.read_file(open(default_cfgfile))
 
     editor = os.environ.get('EDITOR')
     if editor:

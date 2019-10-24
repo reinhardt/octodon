@@ -1,3 +1,4 @@
+import os
 import unittest
 from datetime import date
 from datetime import datetime
@@ -7,6 +8,10 @@ from octodon import format_spent_time
 from octodon import read_from_file
 from octodon import write_to_file
 from pyactiveresource.connection import ResourceNotFound
+
+CACHEFILE = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)),
+    'octodon-projects.test.pickle')
 
 
 class MockHarvest(object):
@@ -123,7 +128,11 @@ class TestOctodon(unittest.TestCase):
              'issue_id': '12345',
              },
         ]
-        Tracking(redmine=MockRedmine(), harvest=harvest).book_harvest(bookings)
+        Tracking(
+            redmine=MockRedmine(),
+            harvest=harvest,
+            project_history_file=CACHEFILE,
+        ).book_harvest(bookings)
         self.assertEqual(len(harvest.entries), 1)
         self.assertEqual(harvest.entries[0]['task_id'], 3982288)
         self.assertEqual(harvest.entries[0]['project_id'], 7585112)
@@ -137,6 +146,7 @@ class TestOctodon(unittest.TestCase):
             harvest=harvest,
             project_mapping=project_mapping,
             task_mapping=task_mapping,
+            project_history_file=CACHEFILE,
         )
 
         #def mapping(harvest, project=None, tracker=None):
@@ -164,6 +174,34 @@ class TestOctodon(unittest.TestCase):
         self.assertEqual(task, 'Meeting')
         project, task = tracking.get_harvest_target(self._make_booking('55555'))
         self.assertEqual(project, '')
+
+    def test_remember_harvest_target(self):
+        harvest = MockHarvest()
+        bookings = [
+            {'project': u'rrzzaa',
+             'activity': u'Development',
+             'comments': u'Fixed encoding',
+             'time': 75.,
+             'hours': 1.15,
+             'spent_on': date(2012, 3, 4),
+             'issue_id': '10763',
+             },
+        ]
+        tracking = Tracking(
+            redmine=MockRedmine(),
+            harvest=harvest,
+            project_history_file=CACHEFILE,
+        )
+        tracking.book_harvest(bookings)
+
+        tracking = Tracking(
+            redmine=MockRedmine(),
+            harvest=harvest,
+            project_history_file=CACHEFILE,
+        )
+        project, task = tracking.get_harvest_target(
+            self._make_booking('10763', description=u'Fixed encoding'))
+        self.assertEqual(project, 7585113)
 
     def test_format_spent_time(self):
         self.assertEqual(format_spent_time(300.), ' 5:00')

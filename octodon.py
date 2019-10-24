@@ -8,6 +8,7 @@ from tempfile import NamedTemporaryFile
 import re
 import sys
 import os
+import pickle
 import socket
 import math
 from jira import JIRA
@@ -280,6 +281,10 @@ def clean_up_bookings(bookings):
                 bookings.remove(booking)
             else:
                 ignored_time += booking['time']
+
+    if not bookings:
+        return removed_bookings
+
     sum_time = get_time_sum(bookings) - ignored_time
 
     if ignored_time > 3. * 60.:
@@ -287,7 +292,9 @@ def clean_up_bookings(bookings):
             ignored_time, format_spent_time(ignored_time)))
     if sum_time and (removed_time / sum_time) > .1:
         print('*** Warning: Removed time is {0} ({1}) ({2:.2f}%)'.format(
-            removed_time, format_spent_time(removed_time), removed_time / sum_time * 100))
+            removed_time,
+            format_spent_time(removed_time),
+            removed_time / (removed_time + sum_time) * 100))
         for booking in sorted(removed_bookings, key=lambda b: b['time'], reverse=True):
             print('    Removed {0} ({1:.0f})'.format(
                 booking['description'], booking['time']))
@@ -390,13 +397,21 @@ class Jira(object):
 
 class Tracking(object):
 
-    def __init__(self, redmine=None, jira=None, harvest=None, project_mapping={}, task_mapping={}):
+    def __init__(self, redmine=None, jira=None, harvest=None, project_mapping={}, task_mapping={}, project_history_file=None):
         self.redmine = redmine
         self.jira = jira
         self.harvest = harvest
         self.project_mapping = project_mapping
         self.task_mapping = task_mapping
         self._projects = []
+        self._issue_to_project = {}
+        if project_history_file is None:
+            self.project_history_file = os.path.join(
+                os.path.dirname(os.path.abspath(__file__)),
+                'octodon-projects.pickle')
+        else:
+            self.project_history_file = project_history_file
+
 
     @property
     def projects(self):
@@ -414,6 +429,8 @@ class Tracking(object):
         return self._projects
 
     def book_harvest(self, bookings):
+        if not self.harvest:
+            return
         projects_lookup = dict(
             [(project[u'code'], project) for project in self.projects])
         for entry in bookings:
@@ -450,6 +467,24 @@ class Tracking(object):
                  'task_id': task_id,
                  'spent_at': entry['spent_on'],
                  })
+            self.remember_project(entry['issue_id'], project['code'])
+
+    def _load_project_history(self):
+        if not os.path.exists(self.project_history_file):
+            self._issue_to_project = {}
+        else:
+            with open(self.project_history_file, 'rb') as cache:
+                self._issue_to_project = pickle.load(cache)
+
+    def remember_project(self, issue_id, project_code):
+        self._load_project_history()
+        self._issue_to_project[issue_id] = project_code
+        with open(self.project_history_file, 'wb') as cache:
+            pickle.dump(self._issue_to_project, cache)
+
+    def recall_project(self, issue_id, default=None):
+        self._load_project_history()
+        return self._issue_to_project.get(issue_id, default)
 
     def redmine_harvest_mapping(self, harvest_projects, project=None,
                                 tracker=None, contracts=[], description=''):
@@ -467,8 +502,8 @@ class Tracking(object):
         elif project:
             part_matches = [
                 proj for proj in harvest_projects
-                if project.lower() in proj.lower()
-                or proj.lower() in project.lower()]
+                if project.lower().startswith(proj.lower())
+                or proj.lower().startswith(project.lower())]
             if part_matches:
                 harvest_project = part_matches[0]
         if not harvest_project:
@@ -487,9 +522,6 @@ class Tracking(object):
                 harvest_project = 'recensio-bugpool'
             if 'star' in harvest_project.lower():
                 harvest_project = 'star-bugpool'
-        if not harvest_project and (project or tracker or contracts):
-            print('No match for {0}, {1}, {2}, {3}'.format(
-                project, tracker, contracts, description))
         return (harvest_project, task)
 
 
@@ -516,7 +548,10 @@ class Tracking(object):
         if issue is not None:
             if ticket_pattern_jira.match(issue_no) and self.jira:
                 project = issue.fields.project.key
-                contracts = []
+                contracts_field = issue.fields.customfield_10902
+                contracts = ([contracts_field.child.value]
+                             if hasattr(contracts_field, 'child')
+                             else [])
             elif self.redmine:
                 pid = issue['project']['id']
                 try:
@@ -530,7 +565,7 @@ class Tracking(object):
 
         for tag in entry['tags']:
             if tag in harvest_projects:
-                project = unicode(tag)
+                project = tag.decode('utf-8')
         if entry['category'] in harvest_projects:
             project = entry['category']
 
@@ -540,12 +575,19 @@ class Tracking(object):
         elif self.redmine:
             tracker = issue and issue['tracker']['name']
 
-        return self.redmine_harvest_mapping(
+        harvest_project, task = self.redmine_harvest_mapping(
             harvest_projects,
             project=project,
             tracker=tracker,
             contracts=contracts,
             description=entry['description'])
+        if not harvest_project:
+            harvest_project = self.recall_project(
+                issue_no, default=harvest_project)
+        if not harvest_project and (project or tracker or contracts):
+            print('No project match for {0}, {1}, {2}, {3}'.format(
+                project, tracker, contracts, entry['description']))
+        return harvest_project, task
 
 
 class Octodon(Cmd):
@@ -602,8 +644,7 @@ class Octodon(Cmd):
             if self.config.has_option(vcs, 'executable'):
                 exe = self.config.get(vcs, 'executable')
             else:
-                #XXX better default
-                exe = '/usr/bin/' + vcs
+                exe = '/usr/bin/env ' + vcs
             self.vcs_list.append({
                 'name': vcs,
                 'class': vcs_class.get(vcs, VCSLog),
@@ -766,8 +807,10 @@ class Octodon(Cmd):
 
     def do_book(self, *args):
         """ Write current bookings to all configured targets. """
-        self.do_redmine()
-        self.do_jira()
+        if self.redmine:
+            self.do_redmine()
+        if self.jira:
+            self.do_jira()
         self.do_harvest()
 
     def do_fetch(self, *args):

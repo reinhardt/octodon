@@ -2,12 +2,16 @@ import os
 import unittest
 from datetime import date
 from datetime import datetime
+from mock import patch
+from octodon import ClockWorkTimeLog
 from octodon import Tracking
 from octodon import clean_up_bookings
 from octodon import format_spent_time
 from octodon import read_from_file
 from octodon import write_to_file
 from pyactiveresource.connection import ResourceNotFound
+from tempfile import mkdtemp
+from tempfile import mkstemp
 
 CACHEFILE = os.path.join(
     os.path.dirname(os.path.abspath(__file__)),
@@ -321,6 +325,326 @@ class TestOctodon(unittest.TestCase):
                  'tags': [],
                  'time': 88.238095238095238},
             ])
+
+
+import unittest
+
+class TestClockWork(unittest.TestCase):
+
+    def test_single_entry(self):
+        clockwork = ClockWorkTimeLog()
+        timesheet = """0614 Improve usability CGUI-417
+0700
+"""
+        self.assertEqual(
+            clockwork.get_facts(timesheet),
+            [
+                {
+                    "description": "Improve usability CGUI-417",
+                    "issue_id": "CGUI-417",
+                    "spent_on": None,
+                    "time": 46.0,
+                },
+            ]
+        )
+
+    def test_single_entry_with_date(self):
+        clockwork = ClockWorkTimeLog()
+        timesheet = """2019-11-14:
+0614 Improve usability CGUI-417
+0700
+"""
+        self.assertEqual(
+            clockwork.get_facts(timesheet),
+            [
+                {
+                    "description": "Improve usability CGUI-417",
+                    "issue_id": "CGUI-417",
+                    "spent_on": datetime(2019, 11, 14),
+                    "time": 46.0,
+                },
+            ]
+        )
+
+    def test_break_between_entries(self):
+        clockwork = ClockWorkTimeLog()
+        timesheet = """2019-11-14:
+0614 Improve usability CGUI-417
+0700
+0714 Improve usability CGUI-417
+0820
+"""
+        self.assertEqual(
+            clockwork.get_facts(timesheet),
+            [
+                {
+                    "description": "Improve usability CGUI-417",
+                    "issue_id": "CGUI-417",
+                    "spent_on": datetime(2019, 11, 14),
+                    "time": 46.0,
+                },
+                {
+                    "description": "Improve usability CGUI-417",
+                    "issue_id": "CGUI-417",
+                    "spent_on": datetime(2019, 11, 14),
+                    "time": 66.0,
+                },
+            ]
+        )
+
+    def test_currently_running_task(self):
+        clockwork = ClockWorkTimeLog()
+        timesheet = """2019-11-14:
+0735 Improve usability CGUI-417
+0815 Manual tests CGUI-422
+"""
+
+        with patch("octodon.datetime") as mock_datetime:
+            mock_datetime.now.return_value = datetime(2019, 11, 14, 9, 0)
+            mock_datetime.strptime.side_effect = lambda *args, **kw: datetime.strptime(*args, **kw)
+            mock_datetime.side_effect = lambda *args, **kw: datetime(*args, **kw)
+
+            facts = clockwork.get_facts(timesheet)
+
+        self.assertEqual(
+            facts,
+            [
+                {
+                    "description": "Improve usability CGUI-417",
+                    "issue_id": "CGUI-417",
+                    "spent_on": datetime(2019, 11, 14),
+                    "time": 40.0,
+                },
+                {
+                    "description": "Manual tests CGUI-422",
+                    "issue_id": "CGUI-422",
+                    "spent_on": datetime(2019, 11, 14),
+                    "time": 45.0,
+                },
+            ]
+        )
+
+    def test_currently_running_task_next_day_reverse_order(self):
+        clockwork = ClockWorkTimeLog()
+        timesheet = """2019-11-14:
+0815 Manual tests CGUI-422
+
+2019-11-13:
+0735 Improve usability CGUI-417
+1735
+"""
+
+        with patch("octodon.datetime") as mock_datetime:
+            mock_datetime.now.return_value = datetime(2019, 11, 14, 9, 0)
+            mock_datetime.strptime.side_effect = lambda *args, **kw: datetime.strptime(*args, **kw)
+            mock_datetime.side_effect = lambda *args, **kw: datetime(*args, **kw)
+
+            facts = clockwork.get_facts(timesheet)
+
+        self.assertEqual(
+            facts,
+            [
+                {
+                    "description": "Manual tests CGUI-422",
+                    "issue_id": "CGUI-422",
+                    "spent_on": datetime(2019, 11, 14),
+                    "time": 45.0,
+                },
+                {
+                    "description": "Improve usability CGUI-417",
+                    "issue_id": "CGUI-417",
+                    "spent_on": datetime(2019, 11, 13),
+                    "time": 600.0,
+                },
+            ]
+        )
+
+    def test_unterminated_task(self):
+        clockwork = ClockWorkTimeLog()
+        timesheet = """2019-11-13:
+0815 Manual tests CGUI-422
+
+2019-11-14:
+0715 Improve usability CGUI-417
+0915
+"""
+
+        with patch("octodon.datetime") as mock_datetime:
+            mock_datetime.now.return_value = datetime(2019, 11, 14, 9, 40)
+            mock_datetime.strptime.side_effect = lambda *args, **kw: datetime.strptime(*args, **kw)
+            mock_datetime.side_effect = lambda *args, **kw: datetime(*args, **kw)
+
+            facts = clockwork.get_facts(timesheet)
+
+        self.assertEqual(
+            facts,
+            [
+                {
+                    "description": "Manual tests CGUI-422",
+                    "issue_id": "CGUI-422",
+                    "spent_on": datetime(2019, 11, 13),
+                    "time": 15. * 60. + 45.,
+                },
+                {
+                    "description": "Improve usability CGUI-417",
+                    "issue_id": "CGUI-417",
+                    "spent_on": datetime(2019, 11, 14),
+                    "time": 120.0,
+                },
+            ]
+        )
+
+    def test_unterminated_task_reverse_order(self):
+        clockwork = ClockWorkTimeLog()
+        timesheet = """2019-11-14:
+0715 Improve usability CGUI-417
+0915
+
+2019-11-13:
+0815 Manual tests CGUI-422
+"""
+
+        with patch("octodon.datetime") as mock_datetime:
+            mock_datetime.now.return_value = datetime(2019, 11, 14, 9, 40)
+            mock_datetime.strptime.side_effect = lambda *args, **kw: datetime.strptime(*args, **kw)
+            mock_datetime.side_effect = lambda *args, **kw: datetime(*args, **kw)
+
+            facts = clockwork.get_facts(timesheet)
+
+        self.assertEqual(
+            facts,
+            [
+                {
+                    "description": "Improve usability CGUI-417",
+                    "issue_id": "CGUI-417",
+                    "spent_on": datetime(2019, 11, 14),
+                    "time": 120.0,
+                },
+                {
+                    "description": "Manual tests CGUI-422",
+                    "issue_id": "CGUI-422",
+                    "spent_on": datetime(2019, 11, 13),
+                    "time": 15. * 60. + 45.,
+                },
+            ]
+        )
+
+    def test_get_raw_log_single_file(self):
+        tmp_fd, tmp_path = mkstemp(suffix='.tmp')
+        tmp_file = os.fdopen(tmp_fd, 'w')
+        log_data = """2019-11-15:
+0850 Framework Meeting PLN-159
+0930
+"""
+        tmp_file.write(log_data)
+        tmp_file.close()
+        clockwork = ClockWorkTimeLog(log_path=tmp_path)
+        self.assertEqual(
+            "".join(clockwork.get_raw_log()),
+            log_data,
+        )
+
+    def test_get_raw_log_directory(self):
+        tmp_path = mkdtemp()
+        tmp_file_1 = open(os.path.join(tmp_path, 'log1.txt'), 'w')
+        tmp_file_2 = open(os.path.join(tmp_path, 'log2.txt'), 'w')
+        log_data_1 = """2019-11-15:
+0850 Framework Meeting PLN-159
+0930
+"""
+        log_data_2 = """2019-11-16:
+0800 Fix login
+0845
+"""
+        tmp_file_1.write(log_data_1)
+        tmp_file_2.write(log_data_2)
+        tmp_file_1.close()
+        tmp_file_2.close()
+        clockwork = ClockWorkTimeLog(log_path=tmp_path)
+        raw_log = "".join(clockwork.get_raw_log())
+        if raw_log.startswith(log_data_1):
+            self.assertEqual(
+                raw_log,
+                "".join((log_data_1, log_data_2)),
+            )
+        else:
+            self.assertEqual(
+                raw_log,
+                "".join((log_data_2, log_data_1)),
+            )
+
+    def test_get_raw_log_glob(self):
+        tmp_path = mkdtemp()
+        tmp_file_1 = open(os.path.join(tmp_path, 'log1.txt'), 'w')
+        tmp_file_2 = open(os.path.join(tmp_path, 'log2.org'), 'w')
+        log_data_1 = """2019-11-15:
+0850 Framework Meeting PLN-159
+0930
+"""
+        log_data_2 = """2019-11-16:
+0800 Fix login
+0845
+"""
+        tmp_file_1.write(log_data_1)
+        tmp_file_2.write(log_data_2)
+        tmp_file_1.close()
+        tmp_file_2.close()
+        clockwork = ClockWorkTimeLog(log_path='{}/*.txt'.format(tmp_path))
+        raw_log = "".join(clockwork.get_raw_log())
+        self.assertEqual(
+            raw_log,
+            log_data_1,
+        )
+
+    def test_get_timeinfo(self):
+        facts = [
+            {
+                "description": "Improve usability CGUI-417",
+                "issue_id": "CGUI-417",
+                "spent_on": datetime(2019, 11, 14),
+                "time": 32.0,
+            },
+            {
+                "description": "Improve usability CGUI-417",
+                "issue_id": "CGUI-417",
+                "spent_on": datetime(2019, 11, 15),
+                "time": 45.0,
+            },
+            {
+                "description": "Improve usability CGUI-417",
+                "issue_id": "CGUI-417",
+                "spent_on": datetime(2019, 11, 15),
+                "time": 23.0,
+            },
+        ]
+
+        def mock_get_facts(timesheet):
+            return facts
+
+        def mock_get_raw_log():
+            return ""
+
+        clockwork = ClockWorkTimeLog()
+        clockwork.get_facts = mock_get_facts
+        clockwork.get_raw_log = mock_get_raw_log
+        self.assertEqual(
+            clockwork.get_timeinfo(
+                datetime(2019, 11, 15),
+            ),
+            [
+                {
+                    "description": "Improve usability CGUI-417",
+                    "issue_id": "CGUI-417",
+                    "spent_on": datetime(2019, 11, 15),
+                    "time": 68.0,
+                    "activity": "none",
+                    "comments": "",
+                    "category": "Work",
+                    "tags": [],
+                    "project": "",
+                },
+            ],
+        )
 
 
 if __name__ == '__main__':

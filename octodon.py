@@ -156,6 +156,8 @@ class ClockWorkTimeLog(object):
             if now.date() == self.current_date.date():
                 end_time = now
             else:
+                print("*** Warning: Entry has no end time: {}, {}".format(
+                    current_task["description"], self.current_date))
                 end_of_day = self.current_date.replace(
                     day=self.current_date.day + 1, hour=0, minute=0
                 )

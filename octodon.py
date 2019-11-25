@@ -106,13 +106,10 @@ class ClockWorkTimeLog(object):
         timesheet = self.get_raw_log()
         bookings = []
         for fact in self.get_facts(timesheet):
-            existing = filter(
-                lambda b: (
-                    b["description"] == fact["description"]
-                    and b["spent_on"] == fact["spent_on"]
-                ),
-                bookings,
-            )
+            existing = [b for b in bookings
+                        if b["description"] == fact["description"]
+                        and b["spent_on"] == fact["spent_on"]
+                        ]
             if existing:
                 existing[0]["time"] += fact["time"]
                 continue

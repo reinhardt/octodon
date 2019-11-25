@@ -787,7 +787,7 @@ class Tracking(object):
 class Octodon(Cmd):
     def __init__(self, config, spent_on, new_session=False, *args):
         Cmd.__init__(self, *args)
-        self.config = get_config(cfgfile)
+        self.config = config
 
         if config.get("main", "source") == "hamster":
             self.time_log = HamsterTimeLog()
@@ -797,6 +797,8 @@ class Octodon(Cmd):
         elif config.get("main", "source") == "plaintext":
             log_path = config.get("plaintext", "log_path")
             self.time_log = ClockWorkTimeLog(log_path=log_path)
+
+        self.editor = config.get("main", "editor")
 
         self.redmine = None
         if config.has_section("redmine"):
@@ -983,7 +985,7 @@ class Octodon(Cmd):
     def do_edit(self, *args):
         """ Edit the current time booking values in an editor. """
         subprocess.check_call(
-            [config.get("main", "editor") + " " + self.sessionfile], shell=True
+            [self.editor + " " + self.sessionfile], shell=True
         )
         activities = self.redmine and self.redmine.activities or []
         spent_on, self.bookings = read_from_file(self.sessionfile, activities)
@@ -1063,7 +1065,7 @@ def get_config(cfgfile):
     return config
 
 
-if __name__ == "__main__":
+def main():
     parser = argparse.ArgumentParser(
         description="Extract time tracking data "
         "from hamster or emacs org mode and book it to redmine/jira/harvest"
@@ -1116,3 +1118,7 @@ if __name__ == "__main__":
 
     octodon = Octodon(config, spent_on, new_session=args.new_session)
     octodon.cmdloop()
+
+
+if __name__ == "__main__":
+    main()

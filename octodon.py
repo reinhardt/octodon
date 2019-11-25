@@ -106,10 +106,12 @@ class ClockWorkTimeLog(object):
         timesheet = self.get_raw_log()
         bookings = []
         for fact in self.get_facts(timesheet):
-            existing = [b for b in bookings
-                        if b["description"] == fact["description"]
-                        and b["spent_on"] == fact["spent_on"]
-                        ]
+            existing = [
+                b
+                for b in bookings
+                if b["description"] == fact["description"]
+                and b["spent_on"] == fact["spent_on"]
+            ]
             if existing:
                 existing[0]["time"] += fact["time"]
                 continue
@@ -154,8 +156,11 @@ class ClockWorkTimeLog(object):
             if now.date() == self.current_date.date():
                 end_time = now
             else:
-                print("*** Warning: Entry has no end time: {}, {}".format(
-                    current_task["description"], self.current_date))
+                print(
+                    "*** Warning: Entry has no end time: {}, {}".format(
+                        current_task["description"], self.current_date
+                    )
+                )
                 end_of_day = self.current_date.replace(
                     day=self.current_date.day + 1, hour=0, minute=0
                 )
@@ -299,19 +304,20 @@ def format_spent_time(time):
 
 
 def pad(string, length):
-    return string + ' ' * (length - len(string))
+    return string + " " * (length - len(string))
 
 
 def make_row(entry, activities):
-    act_name = entry['activity']
-    return ['1',
-            entry['description'],
-            format_spent_time(entry['time']),
-            act_name,
-            entry['issue_id'] or '',
-            entry['project'],
-            entry['comments'],
-            ]
+    act_name = entry["activity"]
+    return [
+        "1",
+        entry["description"],
+        format_spent_time(entry["time"]),
+        act_name,
+        entry["issue_id"] or "",
+        entry["project"],
+        entry["comments"],
+    ]
 
 
 def make_table(rows):
@@ -323,13 +329,8 @@ def make_table(rows):
     for row in rows:
         vals = []
         for i in range(len(row)):
-            vals.append(
-                ' %s ' % pad(
-                    row[i].replace('|', ' '),
-                    max_lens[i],
-                )
-            )
-        row_str = '|%s|' % '|'.join(vals)
+            vals.append(" %s " % pad(row[i].replace("|", " "), max_lens[i]))
+        row_str = "|%s|" % "|".join(vals)
         out_strs.append(divider)
         out_strs.append(row_str)
 
@@ -400,14 +401,17 @@ def read_from_file(filename, activities):
         columns = columns + default_columns[len(columns) :]
         hours, minutes = columns[2].split(":")
         spenttime = int(hours) * 60 + int(minutes)
-        bookings.append({'issue_id': columns[4],
-                         'spent_on': spentdate.strftime('%Y-%m-%d'),
-                         'time': float(spenttime),
-                         'comments': columns[6],
-                         'project': columns[5],
-                         'description': columns[1],
-                         'activity': columns[3],
-                         })
+        bookings.append(
+            {
+                "issue_id": columns[4],
+                "spent_on": spentdate.strftime("%Y-%m-%d"),
+                "time": float(spenttime),
+                "comments": columns[6],
+                "project": columns[5],
+                "description": columns[1],
+                "activity": columns[3],
+            }
+        )
     tmpfile.close()
     return spentdate, bookings
 
@@ -736,7 +740,7 @@ class Tracking(object):
             elif self.redmine:
                 pid = issue["project"]["id"]
                 try:
-                    project = self.redmine.Projects.get(pid)['identifier']
+                    project = self.redmine.Projects.get(pid)["identifier"]
                 except Exception as e:
                     print(
                         "Could not get project identifier: {0}; {1}".format(
@@ -753,8 +757,8 @@ class Tracking(object):
         for tag in entry["tags"]:
             if tag in harvest_projects:
                 project = tag
-        if entry['category'] in harvest_projects:
-            project = entry['category']
+        if entry["category"] in harvest_projects:
+            project = entry["category"]
 
         tracker = None
         if issue_no and ticket_pattern_jira.match(issue_no) and self.jira:
@@ -980,9 +984,7 @@ class Octodon(Cmd):
 
     def do_edit(self, *args):
         """ Edit the current time booking values in an editor. """
-        subprocess.check_call(
-            [self.editor + " " + self.sessionfile], shell=True
-        )
+        subprocess.check_call([self.editor + " " + self.sessionfile], shell=True)
         activities = self.redmine and self.redmine.activities or []
         spent_on, self.bookings = read_from_file(self.sessionfile, activities)
         self.check_issue_and_comment(self.bookings)

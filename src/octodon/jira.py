@@ -1,7 +1,8 @@
+from __future__ import absolute_import
 from datetime import datetime
 from jira import JIRA
 from jira import JIRAError
-from octodon import ticket_pattern_jira
+from octodon.tracking import ticket_pattern_jira
 
 
 class Jira(object):

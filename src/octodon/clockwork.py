@@ -2,7 +2,7 @@ import os
 import re
 from datetime import datetime
 from glob import glob
-from octodon import ticket_pattern_jira
+from octodon.tracking import ticket_pattern_jira
 
 
 class ClockWorkTimeLog(object):

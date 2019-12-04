@@ -33,7 +33,7 @@ setup(
     url="https://pypi.python.org/pypi/octodon",
     license="BSD",
     packages=find_packages(".", exclude=["ez_setup"]),
-    package_dir={"": "."},
+    package_dir={"": "src"},
     include_package_data=True,
     zip_safe=False,
     install_requires=["jira", "pyactiveresource", "python-harvest", "setuptools"],

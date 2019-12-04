@@ -2,6 +2,7 @@ import os
 import pickle
 import socket
 import re
+from octodon.utils import get_data_home
 
 try:
     from pyactiveresource.connection import ResourceNotFound
@@ -41,7 +42,7 @@ class Tracking(object):
         self._issue_to_project = {}
         if project_history_file is None:
             self.project_history_file = os.path.join(
-                os.path.dirname(os.path.abspath(__file__)), "octodon-projects.pickle"
+                get_data_home(), "octodon-projects.pickle"
             )
         else:
             self.project_history_file = project_history_file

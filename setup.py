@@ -40,6 +40,6 @@ setup(
     extras_require={"test": ["mock"]},
     entry_points="""
       [console_scripts]
-      octodon=octodon:main
+      octodon=octodon.cmd:main
     """,
 )

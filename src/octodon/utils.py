@@ -1,4 +1,5 @@
 import math
+import os
 import re
 from datetime import datetime, timedelta
 from functools import reduce
@@ -185,3 +186,10 @@ def clean_up_bookings(bookings):
         if booking["category"] == u"Work":
             booking["time"] += removed_time * booking["time"] / sum_time
     return bookings
+
+
+def get_data_home():
+    xdg_home = os.environ.get("XDG_DATA_HOME") or os.path.expanduser("~/.local/share")
+    if not os.path.exists(os.path.join(xdg_home, "octodon")):
+        os.mkdir(os.path.join(xdg_home, "octodon"))
+    return os.path.join(xdg_home, "octodon")

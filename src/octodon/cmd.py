@@ -1,12 +1,16 @@
 from __future__ import absolute_import
 import os
+import argparse
+import re
 import subprocess
+from datetime import datetime, timedelta
 from cmd import Cmd
-from datetime import timedelta
+from octodon.cmd import Octodon
 from octodon.tracking import Tracking
 from octodon.utils import clean_up_bookings
 from octodon.utils import format_spent_time
 from octodon.utils import get_time_sum
+from octodon.utils import get_data_home
 from octodon.utils import make_row
 from octodon.utils import make_table
 from octodon.utils import read_from_file
@@ -14,6 +18,7 @@ from octodon.utils import write_to_file
 from octodon.version_control import GitLog
 from octodon.version_control import SvnLog
 from octodon.version_control import VCSLog
+from six.moves.configparser import ConfigParser
 
 
 class Octodon(Cmd):
@@ -138,7 +143,7 @@ class Octodon(Cmd):
 
         self.prompt = "octodon> "
         self.sessionfile = os.path.join(
-            os.path.dirname(os.path.abspath(__file__)), ".octodon_session_timelog.rst"
+            get_data_home(), "octodon_session_timelog.rst"
         )
         activities = self.redmine and self.redmine.activities or []
         if os.path.exists(self.sessionfile):
@@ -276,3 +281,79 @@ class Octodon(Cmd):
     def do_EOF(self, line):
         return True
 
+
+def get_config(cfgfile):
+    config = ConfigParser()
+    cfgfiles = []
+    config_home = os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config")
+
+    if cfgfile:
+        cfgfiles.append(cfgfile)
+    cfgfiles.append(
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "defaults.cfg")
+    )
+    cfgfiles.append(
+        os.path.expanduser("~/.octodon.cfg")
+    )
+    cfgfiles.append(
+        os.path.join(config_home, "octodon.cfg")
+    )
+    config.read(cfgfiles)
+
+    editor = os.environ.get("EDITOR")
+    if editor:
+        config.set("main", "editor", editor)
+
+    return config
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Extract time tracking data "
+        "from hamster or emacs org mode and book it to redmine/jira/harvest"
+    )
+    parser.add_argument(
+        "--date",
+        type=str,
+        help="the date for which to extract tracking data, in format YYYYMMDD"
+        " or as an offset in days from today, e.g. -1 for yesterday",
+    )
+    parser.add_argument(
+        "--config-file",
+        "-c",
+        type=str,
+        help="the configuration file to use for this session",
+    )
+    parser.add_argument(
+        "--new-session",
+        "-n",
+        action="store_true",
+        help="discard any existing session and start a new one",
+    )
+    args = parser.parse_args()
+
+    cfgfile = None
+    if args.config_file:
+        cfgfile = args.config_file
+    config = get_config(cfgfile)
+
+    now = datetime.now()
+    today = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    if now.hour >= 16:
+        spent_on = today
+    else:
+        spent_on = today - timedelta(1)
+    if args.date:
+        if args.date == "today":
+            spent_on = today
+        elif re.match(r"[+-][0-9]*$", args.date):
+            spent_on = today + timedelta(int(args.date))
+        elif re.match(r"[0-9]{8}$", args.date):
+            spent_on = datetime.strptime(args.date, "%Y%m%d")
+        elif re.match(r"[0-9]{4}-[0-9]{2}-[0-9]{2}$", args.date):
+            spent_on = datetime.strptime(args.date, "%Y-%m-%d")
+        else:
+            raise Exception("unrecognized date format: {0}".format(args.date))
+
+    octodon = Octodon(config, spent_on, new_session=args.new_session)
+    octodon.cmdloop()

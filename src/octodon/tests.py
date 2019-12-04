@@ -3,12 +3,12 @@ import unittest
 from datetime import date
 from datetime import datetime
 from mock import patch
-from octodon import ClockWorkTimeLog
-from octodon import Tracking
-from octodon import clean_up_bookings
-from octodon import format_spent_time
-from octodon import read_from_file
-from octodon import write_to_file
+from octodon.clockwork import ClockWorkTimeLog
+from octodon.tracking import Tracking
+from octodon.utils import clean_up_bookings
+from octodon.utils import format_spent_time
+from octodon.utils import read_from_file
+from octodon.utils import write_to_file
 from pyactiveresource.connection import ResourceNotFound
 from tempfile import mkdtemp
 from tempfile import mkstemp
@@ -412,7 +412,7 @@ class TestClockWork(unittest.TestCase):
 0815 Manual tests CGUI-422
 """
 
-        with patch("octodon.datetime") as mock_datetime:
+        with patch("octodon.clockwork.datetime") as mock_datetime:
             mock_datetime.now.return_value = datetime(2019, 11, 14, 9, 0)
             mock_datetime.strptime.side_effect = lambda *args, **kw: datetime.strptime(
                 *args, **kw
@@ -449,7 +449,7 @@ class TestClockWork(unittest.TestCase):
 1735
 """
 
-        with patch("octodon.datetime") as mock_datetime:
+        with patch("octodon.clockwork.datetime") as mock_datetime:
             mock_datetime.now.return_value = datetime(2019, 11, 14, 9, 0)
             mock_datetime.strptime.side_effect = lambda *args, **kw: datetime.strptime(
                 *args, **kw
@@ -486,7 +486,7 @@ class TestClockWork(unittest.TestCase):
 0915
 """
 
-        with patch("octodon.datetime") as mock_datetime:
+        with patch("octodon.clockwork.datetime") as mock_datetime:
             mock_datetime.now.return_value = datetime(2019, 11, 14, 9, 40)
             mock_datetime.strptime.side_effect = lambda *args, **kw: datetime.strptime(
                 *args, **kw
@@ -523,7 +523,7 @@ class TestClockWork(unittest.TestCase):
 0815 Manual tests CGUI-422
 """
 
-        with patch("octodon.datetime") as mock_datetime:
+        with patch("octodon.clockwork.datetime") as mock_datetime:
             mock_datetime.now.return_value = datetime(2019, 11, 14, 9, 40)
             mock_datetime.strptime.side_effect = lambda *args, **kw: datetime.strptime(
                 *args, **kw

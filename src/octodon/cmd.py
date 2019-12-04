@@ -5,7 +5,6 @@ import re
 import subprocess
 from datetime import datetime, timedelta
 from cmd import Cmd
-from octodon.cmd import Octodon
 from octodon.tracking import Tracking
 from octodon.utils import clean_up_bookings
 from octodon.utils import format_spent_time

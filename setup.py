@@ -36,7 +36,7 @@ setup(
     package_dir={"": "src"},
     include_package_data=True,
     zip_safe=False,
-    install_requires=["jira", "pyactiveresource", "python-harvest", "setuptools"],
+    install_requires=["jira", "pyactiveresource", "python-harvest-redux", "setuptools"],
     extras_require={"test": ["mock"]},
     entry_points="""
       [console_scripts]

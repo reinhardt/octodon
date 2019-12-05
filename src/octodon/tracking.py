@@ -2,6 +2,8 @@ import os
 import pickle
 import socket
 import re
+#from octodon.exceptions import ConnectionError
+from octodon.exceptions import NotFound
 from octodon.utils import get_data_home
 
 try:
@@ -82,27 +84,27 @@ class Tracking(object):
             if entry["issue_id"] is not None:
                 if ticket_pattern_jira.match(entry["issue_id"]) and self.jira:
                     try:
-                        issue = self.jira.jira.issue(entry["issue_id"])
+                        issue = self.jira.get_issue(entry["issue_id"])
                         issue_title = issue.fields.summary
-                    except JIRAError as je:
+                    except NotFound as nf:
                         print(
                             u"Could not find issue {0}: {1} - {2}".format(
-                                str(entry["issue_id"]), je.status_code, je.text
+                                str(entry["issue_id"]), nf.status_code, nf.text
                             )
                         )
                 if not issue_title and self.redmine:
                     try:
-                        issue = self.redmine.Issue.get(int(entry["issue_id"]))
+                        issue = self.redmine.get_issue(entry["issue_id"])
                         issue_title = issue["subject"]
-                    except (ResourceNotFound, Error):
+                    except (NotFound, ConnectionError):
                         print("Could not find issue " + str(entry["issue_id"]))
 
             self.harvest.add(
                 {
                     "notes": "[#{1}] {2}: {0}".format(
-                        entry["comments"].encode("utf-8"),
-                        str(entry["issue_id"]).encode("utf-8"),
-                        issue_title.encode("utf-8"),
+                        entry["comments"],
+                        str(entry["issue_id"]),
+                        issue_title,
                     ),
                     "project_id": project_id,
                     "hours": str(entry["time"] / 60.0),
@@ -183,16 +185,16 @@ class Tracking(object):
             if ticket_pattern_jira.match(issue_no) and self.jira:
                 try:
                     issue = self.jira.jira.issue(issue_no)
-                except JIRAError as je:
+                except NotFound as nf:
                     print(
                         u"Could not find issue {0}: {1} - {2}".format(
-                            str(issue_no), je.status_code, je.text
+                            str(issue_no), nf.status_code, nf.text
                         )
                     )
             elif self.redmine:
                 try:
-                    issue = self.redmine.Issue.get(issue_no)
-                except (ResourceNotFound, Error, socket.error):
+                    issue = self.redmine.get_issue(issue_no)
+                except (NotFound, ConnectionError, socket.error):
                     print("Could not find issue " + str(issue_no))
 
         if issue is not None:

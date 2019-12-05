@@ -1,4 +1,5 @@
 import re
+from octodon.exceptions import NotFound
 from octodon.utils import get_default_activity
 from pyactiveresource.activeresource import ActiveResource
 from pyactiveresource import connection
@@ -35,6 +36,12 @@ class Redmine(object):
         except connection.Error:
             print("Could not get redmine activities: Connection error")
             self.activities = []
+
+    def get_issue(self, issue_id):
+        try:
+            return self.Issue.get(int(issue_id))
+        except (connection.ResourceNotFound, connection.Error):
+            raise NotFound()
 
     def book_redmine(self, bookings):
         default_activity = get_default_activity(self.activities)

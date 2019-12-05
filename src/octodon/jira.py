@@ -2,12 +2,20 @@ from __future__ import absolute_import
 from datetime import datetime
 from jira import JIRA
 from jira import JIRAError
+#from octodon.exceptions import ConnectionError
+from octodon.exceptions import NotFound
 from octodon.tracking import ticket_pattern_jira
 
 
 class Jira(object):
     def __init__(self, url, user, password):
         self.jira = JIRA(url, auth=(user, password))
+
+    def get_issue(self, issue_id):
+        try:
+            return self.jira.issue(issue_id)
+        except JIRAError as je:
+            raise NotFound(status_code=je.status_code, text=je.text)
 
     def book_jira(self, bookings):
         for entry in bookings:

@@ -3,6 +3,7 @@ import os
 import argparse
 import re
 import subprocess
+import sys
 from datetime import datetime, timedelta
 from cmd import Cmd
 from octodon.tracking import Tracking
@@ -146,11 +147,14 @@ class Octodon(Cmd):
         )
         activities = self.redmine and self.redmine.activities or []
         if os.path.exists(self.sessionfile):
-            start_new_session = (
-                new_session
-                or raw_input("Continue existing session? [Y/n] ").lower() == "n"
-            )
-            if not start_new_session:
+            if not new_session:
+                prompt = "Continue existing session? [Y/n] "
+                if sys.version_info[0] == 2:
+                    answer = raw_input(prompt)
+                else:
+                    answer = input(prompt)
+                new_session = answer.lower() == "n"
+            if not new_session:
                 spent_on, self.bookings = read_from_file(
                     self.sessionfile, activities=activities
                 )
@@ -285,6 +289,7 @@ def get_config(cfgfile):
     config = ConfigParser()
     cfgfiles = []
     config_home = os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config")
+    config_home = os.path.join(config_home, "octodon")
 
     if cfgfile:
         cfgfiles.append(cfgfile)

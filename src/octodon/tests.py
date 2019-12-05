@@ -4,6 +4,7 @@ from datetime import date
 from datetime import datetime
 from mock import patch
 from octodon.clockwork import ClockWorkTimeLog
+from octodon.exceptions import NotFound
 from octodon.tracking import Tracking
 from octodon.utils import clean_up_bookings
 from octodon.utils import format_spent_time
@@ -62,9 +63,13 @@ class MockHarvest(object):
         self.entries.append(entry)
 
 
-class MockIssue(object):
-    @staticmethod
-    def get(issue):
+class MockRedmine(object):
+    Projects = {
+        "22": {"id": "22", "name": "Cynaptic", "identifier": "cynaptic_3000"},
+        "23": {"id": "23", "name": "RRZZAA", "identifier": "rrzzaa"},
+    }
+
+    def get_issue(self, issue):
         issues = {
             "12345": {
                 "project": MockRedmine.Projects["22"],
@@ -86,16 +91,8 @@ class MockIssue(object):
             },
         }
         if issue not in issues:
-            raise ResourceNotFound()
+            raise NotFound()
         return issues[issue]
-
-
-class MockRedmine(object):
-    Issue = MockIssue
-    Projects = {
-        "22": {"id": "22", "name": "Cynaptic", "identifier": "cynaptic_3000"},
-        "23": {"id": "23", "name": "RRZZAA", "identifier": "rrzzaa"},
-    }
 
 
 class TestOctodon(unittest.TestCase):

@@ -32,6 +32,7 @@ class VCSLog(object):
             except subprocess.CalledProcessError as cpe:
                 print("%s returned %d: %s" % (command, cpe.returncode, cpe.output))
                 continue
+            out = out.decode("utf-8")
             log = "\n".join(
                 [
                     re.sub("^([A-Za-z]*:\s*.*\n)*", "", entry)

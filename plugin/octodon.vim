@@ -11,7 +11,6 @@
 "  1.0:
 "    - initial version
 
-echo "Octodon"
 if v:version < 700 || !has('python3')
     echo "This script requires vim7.0+ with Python 3.6 support."
     finish
@@ -56,6 +55,7 @@ def _initialize_octodon_env(upgrade=False):
   from pathlib import Path
   import subprocess
   import venv
+  pyver = sys.version_info[:2]
   virtualenv_path = Path(vim.eval("g:octodon_virtualenv")).expanduser()
   virtualenv_site_packages = str(_get_virtualenv_site_packages(virtualenv_path, pyver))
   first_install = False
@@ -84,11 +84,16 @@ def _initialize_octodon_env(upgrade=False):
   return True
 
 if _initialize_octodon_env():
-  import octodon
-  import time
+    from octodon.clockwork import ClockWorkTimeLog
+    from octodon.utils import format_spent_time
+    from octodon.utils import get_time_sum
 
-def Octodon():
-    print("Octodon")
+def OctodonTimeSum():
+    clockwork = ClockWorkTimeLog()
+    facts = clockwork.get_facts('\n'.join(vim.current.buffer) + '\n')
+    bookings = clockwork.aggregate_facts(facts)
+    sum = get_time_sum(bookings)
+    print(format_spent_time(sum))
 
 def OctodonUpgrade():
   _initialize_octodon_env(upgrade=True)
@@ -98,7 +103,7 @@ def OctodonVersion():
 
 endpython3
 
-command! Octodon :py3 Octodon()
+command! OctodonTimeSum :py3 OctodonTimeSum()
 command! OctodonUpgrade :py3 OctodonUpgrade()
 command! OctodonVersion :py3 OctodonVersion()
 

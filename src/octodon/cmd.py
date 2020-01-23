@@ -161,14 +161,10 @@ class Octodon(Cmd):
             else:
                 spent_on, self.bookings = self.get_bookings(spent_on)
                 self.bookings = clean_up_bookings(self.bookings)
-            os.remove(self.sessionfile)
         else:
             spent_on, self.bookings = self.get_bookings(spent_on)
             self.bookings = clean_up_bookings(self.bookings)
-
-        self.sessionfile = write_to_file(
-            self.bookings, spent_on, activities, file_name=self.sessionfile
-        )
+        self.spent_on = spent_on
 
     def get_bookings(self, spent_on, search_back=4):
         bookings = None
@@ -190,7 +186,7 @@ class Octodon(Cmd):
                     mergewith=loginfo,
                 )
             except NotImplemented:
-                print("Unrecognized vcs: %s" % vcs_config["name"])
+                print("Unrecognized vcs: %s" % vcs_config["name"], file=sys.stderr)
 
         activities = self.redmine and self.redmine.activities or []
         bookings = self.time_log.get_timeinfo(
@@ -214,24 +210,29 @@ class Octodon(Cmd):
             rows = [make_row(entry, activities) for entry in no_issue_or_comment]
             print(
                 "Warning: No issue id and/or comments for the following entries:"
-                "\n{0}".format(make_table(rows))
+                "\n{0}".format(make_table(rows)),
+                file=sys.stderr,
             )
 
     def print_summary(self, bookings):
         total_time = get_time_sum(bookings)
-        total_hours = total_time / 60.0
-        print("total hours: %.2f (%s)" % (total_hours, format_spent_time(total_time)))
+        print("total hours:%s" % format_spent_time(total_time))
 
-    def postcmd(self, stop, line):
-        if not stop:
-            self.print_summary(self.bookings)
-        return stop
+    def do_summary(self, *args):
+        self.print_summary(self.bookings)
+
+    def do_total(self, *args):
+        print(format_spent_time(get_time_sum(self.bookings)))
 
     def do_edit(self, *args):
         """ Edit the current time booking values in an editor. """
+        activities = self.redmine and self.redmine.activities or []
+        self.sessionfile = write_to_file(
+            self.bookings, self.spent_on, activities, file_name=self.sessionfile
+        )
         subprocess.check_call([self.editor + " " + self.sessionfile], shell=True)
         activities = self.redmine and self.redmine.activities or []
-        spent_on, self.bookings = read_from_file(self.sessionfile, activities)
+        _, self.bookings = read_from_file(self.sessionfile, activities)
         self.check_issue_and_comment(self.bookings)
 
     def do_redmine(self, *args):
@@ -241,7 +242,8 @@ class Octodon(Cmd):
         except Exception as e:
             print(
                 "Error while booking - comments too long? Error was: "
-                "%s: %s" % (e.__class__.__name__, e)
+                "%s: %s" % (e.__class__.__name__, e),
+                file=sys.stderr,
             )
 
     def do_jira(self, *args):
@@ -249,14 +251,20 @@ class Octodon(Cmd):
         try:
             self.jira.book_jira(self.bookings)
         except Exception as e:
-            print("Error while booking - " "%s: %s" % (e.__class__.__name__, e))
+            print(
+                "Error while booking - " "%s: %s" % (e.__class__.__name__, e),
+                file=sys.stderr,
+                )
 
     def do_harvest(self, *args):
         """ Write current bookings to harvest. """
         try:
             self.tracking.book_harvest(self.bookings)
         except Exception as e:
-            print("Error while booking - " "%s: %s" % (e.__class__.__name__, e))
+            print(
+                "Error while booking - " "%s: %s" % (e.__class__.__name__, e),
+                file=sys.stderr,
+            )
 
     def do_book(self, *args):
         """ Write current bookings to all configured targets. """
@@ -269,7 +277,7 @@ class Octodon(Cmd):
     def do_fetch(self, *args):
         """ EXPERIMENTAL. Freshly fetch bookings from source. """
         old_bookings = self.bookings[:]
-        spent_on, bookings = self.get_bookings(spent_on)
+        spent_on, bookings = self.get_bookings(self.spent_on)
         bookings = clean_up_bookings(bookings)
         import ipdb
 
@@ -285,7 +293,7 @@ class Octodon(Cmd):
         return True
 
 
-def get_config(cfgfile):
+def get_config(cfgfile=None):
     config = ConfigParser()
     cfgfiles = []
     config_home = os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config")
@@ -334,6 +342,14 @@ def main():
         action="store_true",
         help="discard any existing session and start a new one",
     )
+    parser.add_argument(
+        "command",
+        metavar="command",
+        type=str,
+        nargs="?",
+        help="command to execute. Start interactive mode if ommitted",
+    )
+
     args = parser.parse_args()
 
     cfgfile = None
@@ -360,4 +376,7 @@ def main():
             raise Exception("unrecognized date format: {0}".format(args.date))
 
     octodon = Octodon(config, spent_on, new_session=args.new_session)
-    octodon.cmdloop()
+    if args.command:
+        octodon.onecmd(args.command)
+    else:
+        octodon.cmdloop()

@@ -1,4 +1,5 @@
 import re
+import sys
 from octodon.exceptions import NotFound
 from octodon.utils import get_default_activity
 from pyactiveresource.activeresource import ActiveResource
@@ -34,7 +35,7 @@ class Redmine(object):
         try:
             self.activities = self.Enumerations.get("time_entry_activities")
         except connection.Error:
-            print("Could not get redmine activities: Connection error")
+            print("Could not get redmine activities: Connection error", file=sys.stderr)
             self.activities = []
 
     def get_issue(self, issue_id):
@@ -49,7 +50,10 @@ class Redmine(object):
             if not ticket_pattern_redmine.match(entry["issue_id"]):
                 continue
             if entry["issue_id"] is None:
-                print("No valid issue id, skipping entry (%s)" % entry["description"])
+                print(
+                    "No valid issue id, skipping entry (%s)" % entry["description"],
+                    file=sys.stderr,
+                )
                 continue
             rm_entry = entry.copy()
 
@@ -71,5 +75,6 @@ class Redmine(object):
                     print(
                         u"{0}: {1} ({2})".format(
                             field, u",".join(msgs), rm_entry["comments"]
-                        )
+                        ),
+                        file=sys.stderr,
                     )

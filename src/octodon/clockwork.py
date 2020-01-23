@@ -1,5 +1,6 @@
 import os
 import re
+import sys
 from datetime import datetime
 from glob import glob
 from octodon.tracking import ticket_pattern_jira
@@ -8,6 +9,7 @@ from octodon.tracking import ticket_pattern_jira
 class ClockWorkTimeLog(object):
     date_pattern = re.compile("^([0-9]{4})-([0-9]{2})-([0-9]{2}):?")
     time_pattern = re.compile("^([0-9]{2}:?[0-9]{2}) ?(.*)")
+    tag_pattern = re.compile("#([^ ]*)")
 
     def __init__(self, log_path="time_log.txt"):
         self.log_path = log_path
@@ -15,10 +17,10 @@ class ClockWorkTimeLog(object):
     def get_timeinfo(self, date=datetime.now(), loginfo={}, activities=[]):
         timesheet = self.get_raw_log()
         facts = self.get_facts(timesheet)
-        bookings = self.aggregate_facts(facts, date=date)
+        bookings = self.aggregate_facts(facts, date=date, loginfo=loginfo)
         return bookings
 
-    def aggregate_facts(self, facts, date=datetime.now()):
+    def aggregate_facts(self, facts, date=datetime.now(), loginfo={}):
         bookings = []
         for fact in facts:
             existing = [
@@ -32,12 +34,16 @@ class ClockWorkTimeLog(object):
                 continue
 
             if fact["spent_on"].date() == date.date():
+                tags = [
+                    match
+                    for match in self.tag_pattern.findall(fact["description"])
+                ]
                 fact.update(
                     {
                         "activity": "none",
-                        "comments": "",
+                        "comments": ". ".join(loginfo.get(fact["issue_id"], [])),
                         "category": "Work",
-                        "tags": [],
+                        "tags": tags,
                         "project": "",
                     }
                 )
@@ -74,7 +80,8 @@ class ClockWorkTimeLog(object):
                 print(
                     "*** Warning: Entry has no end time: {}, {}".format(
                         current_task["description"], self.current_date
-                    )
+                    ),
+                    file=sys.stderr,
                 )
                 end_of_day = self.current_date.replace(
                     day=self.current_date.day + 1, hour=0, minute=0

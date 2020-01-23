@@ -2,7 +2,9 @@ import os
 import pickle
 import socket
 import re
-#from octodon.exceptions import ConnectionError
+import sys
+
+# from octodon.exceptions import ConnectionError
 from octodon.exceptions import NotFound
 from octodon.utils import get_data_home
 
@@ -10,17 +12,21 @@ try:
     from pyactiveresource.connection import ResourceNotFound
     from pyactiveresource.connection import Error
 except ImportError:
+
     class ResourceNotFound(Exception):
         pass
 
     class Error(Exception):
         pass
 
+
 try:
     from jira import JIRAError
 except ImportError:
+
     class JIRAError(Exception):
         pass
+
 
 ticket_pattern_jira = re.compile("#?([A-Z0-9]+-[0-9]+)")
 
@@ -60,10 +66,11 @@ class Tracking(object):
                 print(
                     "Could not get harvest projects: {0}: {1}".format(
                         e.__class__.__name__, e
-                    )
+                    ),
+                    file=sys.stderr,
                 )
                 if u"message" in harvest_data:
-                    print(harvest_data[u"message"])
+                    print(harvest_data[u"message"], file=sys.stderr)
                 self._projects = []
         return self._projects
 
@@ -90,21 +97,26 @@ class Tracking(object):
                         print(
                             u"Could not find issue {0}: {1} - {2}".format(
                                 str(entry["issue_id"]), nf.status_code, nf.text
-                            )
+                            ),
+                            file=sys.stderr,
                         )
                 if not issue_title and self.redmine:
                     try:
                         issue = self.redmine.get_issue(entry["issue_id"])
                         issue_title = issue["subject"]
                     except (NotFound, ConnectionError):
-                        print("Could not find issue " + str(entry["issue_id"]))
+                        print(
+                            "Could not find issue " + str(entry["issue_id"]),
+                            file=sys.stderr,
+                        )
 
+            issue_desc = ""
+            if entry["issue_id"]:
+                issue_desc = "[#{0}] {1}: ".format(str(entry["issue_id"]), issue_title)
             self.harvest.add(
                 {
-                    "notes": "[#{1}] {2}: {0}".format(
-                        entry["comments"],
-                        str(entry["issue_id"]),
-                        issue_title,
+                    "notes": "{0}{1}".format(
+                        issue_desc, entry["comments"],
                     ),
                     "project_id": project_id,
                     "hours": str(entry["time"] / 60.0),
@@ -189,13 +201,14 @@ class Tracking(object):
                     print(
                         u"Could not find issue {0}: {1} - {2}".format(
                             str(issue_no), nf.status_code, nf.text
-                        )
+                        ),
+                        file=sys.stderr,
                     )
             elif self.redmine:
                 try:
                     issue = self.redmine.get_issue(issue_no)
                 except (NotFound, ConnectionError, socket.error):
-                    print("Could not find issue " + str(issue_no))
+                    print("Could not find issue " + str(issue_no), file=sys.stderr)
 
         if issue is not None:
             if ticket_pattern_jira.match(issue_no) and self.jira:
@@ -214,7 +227,8 @@ class Tracking(object):
                     print(
                         "Could not get project identifier: {0}; {1}".format(
                             issue["project"]["name"], e
-                        )
+                        ),
+                        file=sys.stderr,
                     )
                     project = ""
                 contracts = [
@@ -248,6 +262,7 @@ class Tracking(object):
             print(
                 "No project match for {0}, {1}, {2}, {3}".format(
                     project, tracker, contracts, entry["description"]
-                )
+                ),
+                file=sys.stderr,
             )
         return harvest_project, task

@@ -1,6 +1,7 @@
 import math
 import os
 import re
+import sys
 from datetime import datetime, timedelta
 from functools import reduce
 from tempfile import NamedTemporaryFile
@@ -148,7 +149,7 @@ def clean_up_bookings(bookings):
     ignored_time = 0.0
     removed_bookings = []
     for booking in bookings[:]:
-        if booking["issue_id"] is None:
+        if booking["issue_id"] is None and not booking["tags"]:
             if booking["category"] == u"Work":
                 removed_time += booking["time"]
                 removed_bookings.append(booking)
@@ -165,7 +166,8 @@ def clean_up_bookings(bookings):
         print(
             "*** Warning: Ignored time is {0} {1}".format(
                 ignored_time, format_spent_time(ignored_time)
-            )
+            ),
+            file=sys.stderr,
         )
     if sum_time and (removed_time / sum_time) > 0.1:
         print(
@@ -173,13 +175,15 @@ def clean_up_bookings(bookings):
                 removed_time,
                 format_spent_time(removed_time),
                 removed_time / (removed_time + sum_time) * 100,
-            )
+            ),
+            file=sys.stderr,
         )
         for booking in sorted(removed_bookings, key=lambda b: b["time"], reverse=True):
             print(
                 "    Removed {0} ({1:.0f})".format(
                     booking["description"], booking["time"]
-                )
+                ),
+                file=sys.stderr,
             )
 
     for booking in bookings:

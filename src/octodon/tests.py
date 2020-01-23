@@ -244,11 +244,11 @@ class TestOctodon(unittest.TestCase):
                 "activity": "Development",
                 "category": u"Work",
                 "comments": "",
-                "description": u"Gemeinsame Durchsuchbarkeit #13568",
-                "issue_id": "13568",
+                "description": u"Gemeinsame Durchsuchbarkeit #toechter",
+                "issue_id": None,
                 "project": u"T\xf6chter",
                 "spent_on": date(2016, 5, 31),
-                "tags": [],
+                "tags": ["toechter"],
                 "time": 420.0,
             },
             {
@@ -286,6 +286,7 @@ class TestOctodon(unittest.TestCase):
             },
         ]
         cleaned_bookings = clean_up_bookings(bookings)
+        self.maxDiff = None
         self.assertEqual(
             cleaned_bookings,
             [
@@ -293,11 +294,11 @@ class TestOctodon(unittest.TestCase):
                     "activity": "Development",
                     "category": u"Work",
                     "comments": "",
-                    "description": u"Gemeinsame Durchsuchbarkeit #13568",
-                    "issue_id": "13568",
+                    "description": u"Gemeinsame Durchsuchbarkeit #toechter",
+                    "issue_id": None,
                     "project": u"T\xf6chter",
                     "spent_on": date(2016, 5, 31),
-                    "tags": [],
+                    "tags": ["toechter"],
                     "time": 436.0,
                 },
                 {
@@ -335,9 +336,6 @@ class TestOctodon(unittest.TestCase):
                 },
             ],
         )
-
-
-import unittest
 
 
 class TestClockWork(unittest.TestCase):
@@ -605,19 +603,19 @@ class TestClockWork(unittest.TestCase):
     def test_get_timeinfo(self):
         facts = [
             {
-                "description": "Improve usability CGUI-417",
+                "description": "Improve usability CGUI-417 #cgui-support",
                 "issue_id": "CGUI-417",
                 "spent_on": datetime(2019, 11, 14),
                 "time": 32.0,
             },
             {
-                "description": "Improve usability CGUI-417",
+                "description": "Improve usability CGUI-417 #cgui-support",
                 "issue_id": "CGUI-417",
                 "spent_on": datetime(2019, 11, 15),
                 "time": 45.0,
             },
             {
-                "description": "Improve usability CGUI-417",
+                "description": "Improve usability CGUI-417 #cgui-support",
                 "issue_id": "CGUI-417",
                 "spent_on": datetime(2019, 11, 15),
                 "time": 23.0,
@@ -637,14 +635,14 @@ class TestClockWork(unittest.TestCase):
             clockwork.get_timeinfo(datetime(2019, 11, 15)),
             [
                 {
-                    "description": "Improve usability CGUI-417",
+                    "description": "Improve usability CGUI-417 #cgui-support",
                     "issue_id": "CGUI-417",
                     "spent_on": datetime(2019, 11, 15),
                     "time": 68.0,
                     "activity": "none",
                     "comments": "",
                     "category": "Work",
-                    "tags": [],
+                    "tags": ["cgui-support"],
                     "project": "",
                 }
             ],

@@ -1,10 +1,11 @@
 import os
 import re
 import subprocess
+import sys
 from datetime import datetime, timedelta
 
-ref_pattern = re.compile("(?:    )?(.*)#([A-Z0-9-]+)")
-ref_keyword_pattern = re.compile("([Rr]efs |[Ff]ixes )$")
+ref_pattern = re.compile("(?:    )?(.*)[# ]([A-Z0-9]+-[0-9]+)")
+ref_keyword_pattern = re.compile("([Rr]efs[ $]|[Ff]ixes[ $])$")
 
 
 class VCSLog(object):
@@ -24,21 +25,27 @@ class VCSLog(object):
         logdict = mergewith
         for repo in repos:
             if not os.path.exists(repo):
-                print("Warning: Repository path not found: {0}".format(repo))
+                print(
+                    "Warning: Repository path not found: {0}".format(repo),
+                    file=sys.stderr,
+                )
                 continue
             os.chdir(repo)
             try:
                 out = subprocess.check_output(" ".join(command + args), shell=True)
             except subprocess.CalledProcessError as cpe:
-                print("%s returned %d: %s" % (command, cpe.returncode, cpe.output))
+                print(
+                    "%s returned %d: %s" % (command, cpe.returncode, cpe.output),
+                    file=sys.stderr,
+                )
                 continue
             out = out.decode("utf-8")
             log = "\n".join(
                 [
-                    re.sub("^([A-Za-z]*:\s*.*\n)*", "", entry)
+                    re.sub(r"^([A-Za-z]*:\s*.*\n)*", "", entry)
                     .replace("\n    ", " ")
                     .strip()
-                    for entry in re.split("^commit [a-z0-9]*\n", out)
+                    for entry in re.split(r"^commit [a-z0-9]*\n", out)
                     if entry
                 ]
             )

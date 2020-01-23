@@ -5,6 +5,7 @@ from jira import JIRAError
 #from octodon.exceptions import ConnectionError
 from octodon.exceptions import NotFound
 from octodon.tracking import ticket_pattern_jira
+import sys
 
 
 class Jira(object):
@@ -42,5 +43,6 @@ class Jira(object):
                 print(
                     u"{0}: {1} ({2})".format(
                         je.status_code, je.text, rm_entry["comments"]
-                    )
+                    ),
+                    file=sys.stderr,
                 )

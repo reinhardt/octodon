@@ -2,6 +2,7 @@ import os
 import re
 import sys
 from datetime import datetime
+from datetime import timedelta
 from glob import glob
 from octodon.tracking import ticket_pattern_jira
 
@@ -83,8 +84,8 @@ class ClockWorkTimeLog(object):
                     ),
                     file=sys.stderr,
                 )
-                end_of_day = self.current_date.replace(
-                    day=self.current_date.day + 1, hour=0, minute=0
+                end_of_day = (self.current_date + timedelta(days=1)).replace(
+                    hour=0, minute=0
                 )
                 end_time = end_of_day
         time_spent = end_time - current_task["clock"]

@@ -2,7 +2,8 @@ from __future__ import absolute_import
 from datetime import datetime
 from jira import JIRA
 from jira import JIRAError
-#from octodon.exceptions import ConnectionError
+
+# from octodon.exceptions import ConnectionError
 from octodon.exceptions import NotFound
 from octodon.tracking import ticket_pattern_jira
 import sys

@@ -36,8 +36,7 @@ class ClockWorkTimeLog(object):
 
             if fact["spent_on"].date() == date.date():
                 tags = [
-                    match
-                    for match in self.tag_pattern.findall(fact["description"])
+                    match for match in self.tag_pattern.findall(fact["description"])
                 ]
                 fact.update(
                     {

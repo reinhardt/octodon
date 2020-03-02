@@ -117,9 +117,7 @@ class Tracking(object):
                 issue_desc = "[#{0}] {1}: ".format(str(entry["issue_id"]), issue_title)
             self.harvest.add(
                 {
-                    "notes": "{0}{1}".format(
-                        issue_desc, entry["comments"],
-                    ),
+                    "notes": "{0}{1}".format(issue_desc, entry["comments"]),
                     "project_id": project_id,
                     "hours": str(entry["time"] / 60.0),
                     "task_id": task_id,

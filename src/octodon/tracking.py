@@ -28,7 +28,7 @@ except ImportError:
         pass
 
 
-ticket_pattern_jira = re.compile("#?([A-Z0-9]+-[0-9]+)")
+ticket_pattern_jira = re.compile("#?([A-Z]+-[0-9]+)")
 
 
 class Tracking(object):
@@ -40,6 +40,7 @@ class Tracking(object):
         project_mapping={},
         task_mapping={},
         project_history_file=None,
+        default_task=None,
     ):
         self.redmine = redmine
         self.jira = jira
@@ -54,6 +55,7 @@ class Tracking(object):
             )
         else:
             self.project_history_file = project_history_file
+        self.default_task = default_task
 
     @property
     def projects(self):
@@ -146,9 +148,9 @@ class Tracking(object):
     def redmine_harvest_mapping(
         self, harvest_projects, project=None, tracker=None, contracts=[], description=""
     ):
-        task = "Development"
+        task = self.default_task
         for key, value in self.task_mapping.items():
-            if key in description.lower():
+            if key.lower() in description.lower() or key.lower() in project.lower():
                 task = value
                 break
 

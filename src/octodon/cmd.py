@@ -28,13 +28,16 @@ class Octodon(Cmd):
 
         if config.get("main", "source") == "hamster":
             from octodon.hamster import HamsterTimeLog
+
             self.time_log = HamsterTimeLog()
         elif config.get("main", "source") == "orgmode":
             from octodon.orgmode import OrgModeTimeLog
+
             filename = config.get("orgmode", "filename")
             self.time_log = OrgModeTimeLog(filename)
         elif config.get("main", "source") == "plaintext":
             from octodon.clockwork import ClockWorkTimeLog
+
             log_path = config.get("plaintext", "log_path")
             self.time_log = ClockWorkTimeLog(log_path=log_path)
 
@@ -43,6 +46,7 @@ class Octodon(Cmd):
         self.redmine = None
         if config.has_section("redmine"):
             from octodon.redmine import Redmine
+
             if config.has_option("redmine", "password_command"):
                 cmd = config.get("redmine", "password_command")
                 password = (
@@ -53,21 +57,6 @@ class Octodon(Cmd):
                 config.get("redmine", "url"),
                 config.get("redmine", "user"),
                 config.get("redmine", "pass"),
-            )
-
-        self.jira = None
-        if config.has_section("jira"):
-            from octodon.jira import Jira
-            if config.has_option("jira", "password_command"):
-                cmd = config.get("jira", "password_command")
-                password = (
-                    subprocess.check_output(cmd.split(" ")).strip().decode("utf-8")
-                )
-                config.set("jira", "pass", password)
-            self.jira = Jira(
-                config.get("jira", "url"),
-                config.get("jira", "user"),
-                config.get("jira", "pass"),
             )
 
         vcs_class = {"git": GitLog, "svn": SvnLog}
@@ -100,52 +89,9 @@ class Octodon(Cmd):
                 }
             )
 
-        if config.has_section("harvest"):
-            from harvest import Harvest
-
-            if config.has_option("harvest", "password_command"):
-                cmd = config.get("harvest", "password_command")
-                password = (
-                    subprocess.check_output(cmd.split(" ")).strip().decode("utf-8")
-                )
-                config.set("harvest", "pass", password)
-            harvest = Harvest(
-                config.get("harvest", "url"),
-                config.get("harvest", "user"),
-                config.get("harvest", "pass"),
-            )
-        else:
-            harvest = None
-
-        if self.config.has_option("main", "project-mapping"):
-            project_mapping = self.config.get("main", "project-mapping")
-            project_mapping = project_mapping.split("\n")
-            project_mapping = dict(
-                [pair.split(" ") for pair in project_mapping if pair]
-            )
-        else:
-            project_mapping = {}
-
-        if self.config.has_option("main", "task-mapping"):
-            task_mapping = self.config.get("main", "task-mapping")
-            task_mapping = task_mapping.split("\n")
-            task_mapping = dict([pair.split(" ", 1) for pair in task_mapping if pair])
-        else:
-            task_mapping = {}
-
-        self.tracking = Tracking(
-            redmine=self.redmine,
-            jira=self.jira,
-            harvest=harvest,
-            project_mapping=project_mapping,
-            task_mapping=task_mapping,
-        )
-
         self.prompt = "octodon> "
-        self.sessionfile = os.path.join(
-            get_data_home(), "octodon_session_timelog.rst"
-        )
-        activities = self.redmine and self.redmine.activities or []
+        self.sessionfile = os.path.join(get_data_home(), "octodon_session_timelog.rst")
+        self.is_new_session = True
         if os.path.exists(self.sessionfile):
             if not new_session:
                 prompt = "Continue existing session? [Y/n] "
@@ -153,18 +99,101 @@ class Octodon(Cmd):
                     answer = raw_input(prompt)
                 else:
                     answer = input(prompt)
-                new_session = answer.lower() == "n"
-            if not new_session:
-                spent_on, self.bookings = read_from_file(
+                self.is_new_session = answer.lower() == "n"
+        self.spent_on = spent_on
+
+    @property
+    def jira(self):
+        jira = getattr(self, "_jira", None)
+        if jira is None:
+            if self.config.has_section("jira"):
+                from octodon.jira import Jira
+
+                if self.config.has_option("jira", "password_command"):
+                    cmd = self.config.get("jira", "password_command")
+                    password = (
+                        subprocess.check_output(cmd.split(" ")).strip().decode("utf-8")
+                    )
+                    self.config.set("jira", "pass", password)
+                self._jira = jira = Jira(
+                    self.config.get("jira", "url"),
+                    self.config.get("jira", "user"),
+                    self.config.get("jira", "pass"),
+                )
+        return jira
+
+    @property
+    def harvest(self):
+        harvest = getattr(self, "_harvest", None)
+        if harvest is None:
+            if self.config.has_section("harvest"):
+                from harvest import Harvest
+
+                if self.config.has_option("harvest", "password_command"):
+                    cmd = self.config.get("harvest", "password_command")
+                    password = (
+                        subprocess.check_output(cmd.split(" ")).strip().decode("utf-8")
+                    )
+                    self.config.set("harvest", "pass", password)
+                self._harvest = harvest = Harvest(
+                    self.config.get("harvest", "url"),
+                    self.config.get("harvest", "user"),
+                    self.config.get("harvest", "pass"),
+                )
+            else:
+                self._harvest = None
+        return harvest
+
+    @property
+    def tracking(self):
+        tracking = getattr(self, "_tracking", None)
+        if tracking is None:
+            if self.config.has_option("main", "project-mapping"):
+                project_mapping = self.config.get("main", "project-mapping")
+                project_mapping = project_mapping.split("\n")
+                project_mapping = dict(
+                    [pair.split(" ") for pair in project_mapping if pair]
+                )
+            else:
+                project_mapping = {}
+
+            if self.config.has_option("main", "task-mapping"):
+                task_mapping = self.config.get("main", "task-mapping")
+                task_mapping = task_mapping.split("\n")
+                task_mapping = dict(
+                    [pair.split(" ", 1) for pair in task_mapping if pair]
+                )
+            else:
+                task_mapping = {}
+
+            self._tracking = tracking = Tracking(
+                redmine=self.redmine,
+                jira=self.jira,
+                harvest=self.harvest,
+                project_mapping=project_mapping,
+                task_mapping=task_mapping,
+                default_task=self.config.get("main", "default-task"),
+            )
+        return tracking
+
+    @property
+    def bookings(self):
+        bookings = getattr(self, "_bookings", None)
+        if bookings is None:
+            if not self.is_new_session:
+                activities = self.redmine and self.redmine.activities or []
+                self.spent_on, bookings = read_from_file(
                     self.sessionfile, activities=activities
                 )
             else:
-                spent_on, self.bookings = self.get_bookings(spent_on)
-                self.bookings = clean_up_bookings(self.bookings)
-        else:
-            spent_on, self.bookings = self.get_bookings(spent_on)
-            self.bookings = clean_up_bookings(self.bookings)
-        self.spent_on = spent_on
+                self.spent_on, bookings = self.get_bookings(self.spent_on)
+                bookings = clean_up_bookings(bookings)
+            self._bookings = bookings
+        return bookings
+
+    def clear_bookings(self):
+        self.is_new_session = False
+        self._bookings = None
 
     def get_bookings(self, spent_on, search_back=4):
         bookings = None
@@ -222,7 +251,12 @@ class Octodon(Cmd):
         self.print_summary(self.bookings)
 
     def do_total(self, *args):
-        print(format_spent_time(get_time_sum(self.bookings)))
+        bookings = self.time_log.get_timeinfo(date=self.spent_on)
+        print(format_spent_time(get_time_sum(bookings)))
+
+    def do_list(self, *args):
+        for entry in self.bookings:
+            print("- {comments}".format(**entry))
 
     def do_edit(self, *args):
         """ Edit the current time booking values in an editor. """
@@ -230,9 +264,11 @@ class Octodon(Cmd):
         self.sessionfile = write_to_file(
             self.bookings, self.spent_on, activities, file_name=self.sessionfile
         )
-        subprocess.check_call([self.editor + " " + self.sessionfile], shell=True)
+        retval = subprocess.run([self.editor + " " + self.sessionfile], shell=True)
+        if retval.returncode:
+            print("Warning: The editor reported a problem ({})".format(retval))
         activities = self.redmine and self.redmine.activities or []
-        _, self.bookings = read_from_file(self.sessionfile, activities)
+        self.clear_bookings()
         self.check_issue_and_comment(self.bookings)
 
     def do_redmine(self, *args):
@@ -254,7 +290,7 @@ class Octodon(Cmd):
             print(
                 "Error while booking - " "%s: %s" % (e.__class__.__name__, e),
                 file=sys.stderr,
-                )
+            )
 
     def do_harvest(self, *args):
         """ Write current bookings to harvest. """
@@ -277,19 +313,25 @@ class Octodon(Cmd):
     def do_fetch(self, *args):
         """ EXPERIMENTAL. Freshly fetch bookings from source. """
         old_bookings = self.bookings[:]
-        spent_on, bookings = self.get_bookings(self.spent_on)
+        self.spent_on, bookings = self.get_bookings(self.spent_on)
         bookings = clean_up_bookings(bookings)
         import ipdb
 
         ipdb.set_trace()
 
     def do_exit(self, line):
+        if os.path.exists(self.sessionfile):
+            os.remove(self.sessionfile)
         return True
 
     def do_quit(self, line):
+        if os.path.exists(self.sessionfile):
+            os.remove(self.sessionfile)
         return True
 
     def do_EOF(self, line):
+        if os.path.exists(self.sessionfile):
+            os.remove(self.sessionfile)
         return True
 
 
@@ -304,12 +346,8 @@ def get_config(cfgfile=None):
     cfgfiles.append(
         os.path.join(os.path.dirname(os.path.abspath(__file__)), "defaults.cfg")
     )
-    cfgfiles.append(
-        os.path.expanduser("~/.octodon.cfg")
-    )
-    cfgfiles.append(
-        os.path.join(config_home, "octodon.cfg")
-    )
+    cfgfiles.append(os.path.expanduser("~/.octodon.cfg"))
+    cfgfiles.append(os.path.join(config_home, "octodon.cfg"))
     config.read(cfgfiles)
 
     editor = os.environ.get("EDITOR")
@@ -375,8 +413,9 @@ def main():
         else:
             raise Exception("unrecognized date format: {0}".format(args.date))
 
-    octodon = Octodon(config, spent_on, new_session=args.new_session)
     if args.command:
+        octodon = Octodon(config, spent_on, new_session=True)
         octodon.onecmd(args.command)
     else:
+        octodon = Octodon(config, spent_on, new_session=args.new_session)
         octodon.cmdloop()

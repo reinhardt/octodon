@@ -125,7 +125,7 @@ class TestOctodon(unittest.TestCase):
             }
         ]
         Tracking(
-            redmine=MockRedmine(), harvest=harvest, project_history_file=CACHEFILE
+            redmine=MockRedmine(), harvest=harvest, project_history_file=CACHEFILE,
         ).book_harvest(bookings)
         self.assertEqual(len(harvest.entries), 1)
         self.assertEqual(harvest.entries[0]["task_id"], 3982288)
@@ -141,6 +141,7 @@ class TestOctodon(unittest.TestCase):
             project_mapping=project_mapping,
             task_mapping=task_mapping,
             project_history_file=CACHEFILE,
+            default_task="Development",
         )
 
         # def mapping(harvest, project=None, tracker=None):

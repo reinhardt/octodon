@@ -3,7 +3,7 @@ editor = vim
 vcs =
     git
     svn
-source = orgmode
+source = plaintext
 project-mapping =
     project-1 my-project-i
 task-mapping =
@@ -12,6 +12,9 @@ task-mapping =
 
 [orgmode]
 filename = /tmp/orgtest.org
+
+[plaintext]
+log_path = /home/me/Timetracking/*.txt
 
 [redmine]
 url = http://example.org/redmine

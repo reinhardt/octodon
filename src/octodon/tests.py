@@ -3,12 +3,13 @@ import unittest
 from datetime import date
 from datetime import datetime
 from mock import patch
-from octodon import ClockWorkTimeLog
-from octodon import Tracking
-from octodon import clean_up_bookings
-from octodon import format_spent_time
-from octodon import read_from_file
-from octodon import write_to_file
+from octodon.clockwork import ClockWorkTimeLog
+from octodon.exceptions import NotFound
+from octodon.tracking import Tracking
+from octodon.utils import clean_up_bookings
+from octodon.utils import format_spent_time
+from octodon.utils import read_from_file
+from octodon.utils import write_to_file
 from pyactiveresource.connection import ResourceNotFound
 from tempfile import mkdtemp
 from tempfile import mkstemp
@@ -62,9 +63,13 @@ class MockHarvest(object):
         self.entries.append(entry)
 
 
-class MockIssue(object):
-    @staticmethod
-    def get(issue):
+class MockRedmine(object):
+    Projects = {
+        "22": {"id": "22", "name": "Cynaptic", "identifier": "cynaptic_3000"},
+        "23": {"id": "23", "name": "RRZZAA", "identifier": "rrzzaa"},
+    }
+
+    def get_issue(self, issue):
         issues = {
             "12345": {
                 "project": MockRedmine.Projects["22"],
@@ -86,19 +91,15 @@ class MockIssue(object):
             },
         }
         if issue not in issues:
-            raise ResourceNotFound()
+            raise NotFound()
         return issues[issue]
 
 
-class MockRedmine(object):
-    Issue = MockIssue
-    Projects = {
-        "22": {"id": "22", "name": "Cynaptic", "identifier": "cynaptic_3000"},
-        "23": {"id": "23", "name": "RRZZAA", "identifier": "rrzzaa"},
-    }
-
-
 class TestOctodon(unittest.TestCase):
+    def setUp(self):
+        if os.path.exists(CACHEFILE):
+            os.remove(CACHEFILE)
+
     def _make_booking(self, issue_id, project="", description=""):
         booking = {
             "issue_id": issue_id,
@@ -144,6 +145,7 @@ class TestOctodon(unittest.TestCase):
             project_mapping=project_mapping,
             task_mapping=task_mapping,
             project_history_file=CACHEFILE,
+            default_task="Development",
         )
 
         # def mapping(harvest, project=None, tracker=None):
@@ -247,11 +249,11 @@ class TestOctodon(unittest.TestCase):
                 "activity": "Development",
                 "category": u"Work",
                 "comments": "",
-                "description": u"Gemeinsame Durchsuchbarkeit #13568",
-                "issue_id": "13568",
+                "description": u"Gemeinsame Durchsuchbarkeit #toechter",
+                "issue_id": None,
                 "project": u"T\xf6chter",
                 "spent_on": date(2016, 5, 31),
-                "tags": [],
+                "tags": ["toechter"],
                 "time": 420.0,
             },
             {
@@ -289,6 +291,7 @@ class TestOctodon(unittest.TestCase):
             },
         ]
         cleaned_bookings = clean_up_bookings(bookings)
+        self.maxDiff = None
         self.assertEqual(
             cleaned_bookings,
             [
@@ -296,11 +299,11 @@ class TestOctodon(unittest.TestCase):
                     "activity": "Development",
                     "category": u"Work",
                     "comments": "",
-                    "description": u"Gemeinsame Durchsuchbarkeit #13568",
-                    "issue_id": "13568",
+                    "description": u"Gemeinsame Durchsuchbarkeit #toechter",
+                    "issue_id": None,
                     "project": u"T\xf6chter",
                     "spent_on": date(2016, 5, 31),
-                    "tags": [],
+                    "tags": ["toechter"],
                     "time": 436.0,
                 },
                 {
@@ -338,9 +341,6 @@ class TestOctodon(unittest.TestCase):
                 },
             ],
         )
-
-
-import unittest
 
 
 class TestClockWork(unittest.TestCase):
@@ -412,7 +412,7 @@ class TestClockWork(unittest.TestCase):
 0815 Manual tests CGUI-422
 """
 
-        with patch("octodon.datetime") as mock_datetime:
+        with patch("octodon.clockwork.datetime") as mock_datetime:
             mock_datetime.now.return_value = datetime(2019, 11, 14, 9, 0)
             mock_datetime.strptime.side_effect = lambda *args, **kw: datetime.strptime(
                 *args, **kw
@@ -449,7 +449,7 @@ class TestClockWork(unittest.TestCase):
 1735
 """
 
-        with patch("octodon.datetime") as mock_datetime:
+        with patch("octodon.clockwork.datetime") as mock_datetime:
             mock_datetime.now.return_value = datetime(2019, 11, 14, 9, 0)
             mock_datetime.strptime.side_effect = lambda *args, **kw: datetime.strptime(
                 *args, **kw
@@ -486,7 +486,7 @@ class TestClockWork(unittest.TestCase):
 0915
 """
 
-        with patch("octodon.datetime") as mock_datetime:
+        with patch("octodon.clockwork.datetime") as mock_datetime:
             mock_datetime.now.return_value = datetime(2019, 11, 14, 9, 40)
             mock_datetime.strptime.side_effect = lambda *args, **kw: datetime.strptime(
                 *args, **kw
@@ -523,7 +523,7 @@ class TestClockWork(unittest.TestCase):
 0815 Manual tests CGUI-422
 """
 
-        with patch("octodon.datetime") as mock_datetime:
+        with patch("octodon.clockwork.datetime") as mock_datetime:
             mock_datetime.now.return_value = datetime(2019, 11, 14, 9, 40)
             mock_datetime.strptime.side_effect = lambda *args, **kw: datetime.strptime(
                 *args, **kw
@@ -608,19 +608,19 @@ class TestClockWork(unittest.TestCase):
     def test_get_timeinfo(self):
         facts = [
             {
-                "description": "Improve usability CGUI-417",
+                "description": "Improve usability CGUI-417 #cgui-support",
                 "issue_id": "CGUI-417",
                 "spent_on": datetime(2019, 11, 14),
                 "time": 32.0,
             },
             {
-                "description": "Improve usability CGUI-417",
+                "description": "Improve usability CGUI-417 #cgui-support",
                 "issue_id": "CGUI-417",
                 "spent_on": datetime(2019, 11, 15),
                 "time": 45.0,
             },
             {
-                "description": "Improve usability CGUI-417",
+                "description": "Improve usability CGUI-417 #cgui-support",
                 "issue_id": "CGUI-417",
                 "spent_on": datetime(2019, 11, 15),
                 "time": 23.0,
@@ -640,14 +640,14 @@ class TestClockWork(unittest.TestCase):
             clockwork.get_timeinfo(datetime(2019, 11, 15)),
             [
                 {
-                    "description": "Improve usability CGUI-417",
+                    "description": "Improve usability CGUI-417 #cgui-support",
                     "issue_id": "CGUI-417",
                     "spent_on": datetime(2019, 11, 15),
                     "time": 68.0,
                     "activity": "none",
                     "comments": "",
                     "category": "Work",
-                    "tags": [],
+                    "tags": ["cgui-support"],
                     "project": "",
                 }
             ],

@@ -143,29 +143,14 @@ class Tracking(object):
         self._load_project_history()
         return self._issue_to_project.get(issue_id, default)
 
-    def redmine_harvest_mapping(
+    def guess_project(
         self, harvest_projects, project=None, tracker=None, contracts=[], description=""
     ):
-        task = self.default_task
-        for key, value in self.task_mapping.items():
-            if key.lower() in description.lower() or key.lower() in project.lower():
-                task = value
-                break
-
         harvest_project = ""
         if project in self.project_mapping:
             harvest_project = self.project_mapping[project]
         elif project in harvest_projects:
             harvest_project = project
-        elif project:
-            part_matches = [
-                proj
-                for proj in harvest_projects
-                if project.lower().startswith(proj.lower())
-                or proj.lower().startswith(project.lower())
-            ]
-            if part_matches:
-                harvest_project = part_matches[0]
         if not harvest_project:
             for contract in contracts:
                 if contract in harvest_projects:
@@ -178,13 +163,25 @@ class Tracking(object):
                 ]
                 if part_matches:
                     harvest_project = part_matches[0]
-        # Because of harvest's limited filtering we want bugs in a separate project.
-        if tracker == "Bug":
-            if "recensio" in harvest_project.lower():
-                harvest_project = "recensio-bugpool"
-            if "star" in harvest_project.lower():
-                harvest_project = "star-bugpool"
-        return (harvest_project, task)
+
+        if not harvest_project and project:
+            part_matches = [
+                proj
+                for proj in harvest_projects
+                if project.lower().startswith(proj.lower())
+                or proj.lower().startswith(project.lower())
+            ]
+            if part_matches:
+                harvest_project = part_matches[0]
+        return harvest_project
+
+    def guess_task(self, project=None, description=""):
+        task = self.default_task
+        for key, value in self.task_mapping.items():
+            if key.lower() in description.lower() or key.lower() in project.lower():
+                task = value
+                break
+        return task
 
     def get_harvest_target(self, entry):
         harvest_projects = [project[u"code"] for project in self.projects]
@@ -249,7 +246,7 @@ class Tracking(object):
         elif self.redmine:
             tracker = issue and issue["tracker"]["name"]
 
-        harvest_project, task = self.redmine_harvest_mapping(
+        harvest_project = self.guess_project(
             harvest_projects,
             project=project,
             tracker=tracker,
@@ -258,6 +255,7 @@ class Tracking(object):
         )
         if not harvest_project:
             harvest_project = self.recall_project(issue_no, default=harvest_project)
+
         if not harvest_project and (project or tracker or contracts):
             print(
                 "No project match for {0}, {1}, {2}, {3}".format(
@@ -265,4 +263,5 @@ class Tracking(object):
                 ),
                 file=sys.stderr,
             )
+        task = self.guess_task(project=project, description=entry["description"])
         return harvest_project, task

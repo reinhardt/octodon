@@ -1,11 +1,13 @@
 from __future__ import absolute_import
 import os
 import argparse
+import pystache
 import re
 import subprocess
 import sys
-from datetime import datetime, timedelta
+from contextlib import contextmanager
 from cmd import Cmd
+from datetime import datetime, timedelta
 from octodon.tracking import Tracking
 from octodon.utils import clean_up_bookings
 from octodon.utils import format_spent_time
@@ -42,6 +44,18 @@ class Octodon(Cmd):
             self.time_log = ClockWorkTimeLog(log_path=log_path)
 
         self.editor = config.get("main", "editor")
+
+        self.list_item_template = "- {comments}"
+        if config.has_option("main", "list-item-template"):
+            self.list_item_template = config.get("main", "list-item-template")
+
+        self.list_template = None
+        if config.has_option("main", "list-template-file"):
+            list_template_file = os.path.expanduser(
+                config.get("main", "list-template-file")
+            )
+            with open(list_template_file, "r") as tmpl_file:
+                self.list_template = pystache.parse(tmpl_file.read())
 
         self.redmine = None
         if config.has_section("redmine"):
@@ -177,13 +191,22 @@ class Octodon(Cmd):
         return tracking
 
     @property
+    def activities(self):
+        if getattr(self, "_activities", None) is None:
+            self._activities = []
+            if self.redmine:
+                self._activities.extend(self.redmine.activities)
+            if self.harvest:
+                self._activities.extend([act["task"] for act in self.harvest.tasks()])
+        return self._activities
+
+    @property
     def bookings(self):
         bookings = getattr(self, "_bookings", None)
         if bookings is None:
             if not self.is_new_session:
-                activities = self.redmine and self.redmine.activities or []
                 self.spent_on, bookings = read_from_file(
-                    self.sessionfile, activities=activities
+                    self.sessionfile, activities=self.activities
                 )
             else:
                 self.spent_on, bookings = self.get_bookings(self.spent_on)
@@ -217,9 +240,8 @@ class Octodon(Cmd):
             except NotImplemented:
                 print("Unrecognized vcs: %s" % vcs_config["name"], file=sys.stderr)
 
-        activities = self.redmine and self.redmine.activities or []
         bookings = self.time_log.get_timeinfo(
-            date=spent_on, loginfo=loginfo, activities=activities
+            date=spent_on, loginfo=loginfo, activities=self.activities
         )
         if self.tracking.harvest is not None:
             for entry in bookings:
@@ -234,9 +256,8 @@ class Octodon(Cmd):
             for entry in bookings
             if entry["issue_id"] is None or len(entry["comments"]) <= 0
         ]
-        activities = self.redmine and self.redmine.activities or []
         if len(no_issue_or_comment) > 0:
-            rows = [make_row(entry, activities) for entry in no_issue_or_comment]
+            rows = [make_row(entry, self.activities) for entry in no_issue_or_comment]
             print(
                 "Warning: No issue id and/or comments for the following entries:"
                 "\n{0}".format(make_table(rows)),
@@ -255,19 +276,47 @@ class Octodon(Cmd):
         print(format_spent_time(get_time_sum(bookings)))
 
     def do_list(self, *args):
-        for entry in self.bookings:
-            print("- {comments}".format(**entry))
+        @contextmanager
+        def prepare_outfile(args):
+            if len(args) >= 1 and args[0]:
+                filename = os.path.expanduser(args[0])
+                outfile = open(filename, "w")
+                yield outfile
+                print("Printed to {}".format(filename))
+                outfile.close()
+            else:
+                yield sys.stdout
+
+        with prepare_outfile(args) as outfile:
+            if self.list_template:
+                print(self.get_templated_list(self.bookings), file=outfile)
+            else:
+                print(self.get_simple_list(self.bookings), file=outfile)
+
+    def get_simple_list(self, bookings):
+        try:
+            for entry in bookings:
+                return self.list_item_template.format(**entry)
+        except Exception as e:
+            print(
+                "Error when using template ({})! {}: {}".format(
+                    self.list_item_template, e.__class__.__name__, e
+                ),
+                file=sys.stderr,
+            )
+
+    def get_templated_list(self, bookings):
+        renderer = pystache.Renderer()
+        return renderer.render(self.list_template, {"bookings": self.bookings})
 
     def do_edit(self, *args):
         """ Edit the current time booking values in an editor. """
-        activities = self.redmine and self.redmine.activities or []
         self.sessionfile = write_to_file(
-            self.bookings, self.spent_on, activities, file_name=self.sessionfile
+            self.bookings, self.spent_on, self.activities, file_name=self.sessionfile
         )
         retval = subprocess.run([self.editor + " " + self.sessionfile], shell=True)
         if retval.returncode:
             print("Warning: The editor reported a problem ({})".format(retval))
-        activities = self.redmine and self.redmine.activities or []
         self.clear_bookings()
         self.check_issue_and_comment(self.bookings)
 

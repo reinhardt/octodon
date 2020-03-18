@@ -96,6 +96,10 @@ class MockRedmine(object):
 
 
 class TestOctodon(unittest.TestCase):
+    def setUp(self):
+        if os.path.exists(CACHEFILE):
+            os.remove(CACHEFILE)
+
     def _make_booking(self, issue_id, project="", description=""):
         booking = {
             "issue_id": issue_id,

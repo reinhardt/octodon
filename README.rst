@@ -22,11 +22,13 @@ To be able to book time to redmine or harvest, you need to fill in the *url*, *u
 
 For the *source* option you can choose *hamster*, *orgmode* or *plaintext*. *orgmode* needs a section *[orgmode]* with an entry *filename*. Octodon will expect a time tracking report table in this file. *plaintext* needs a section *[plaintext]* with an entry *log_path*. This can be a path to a file, a folder, or a glob, specifying data in a format like this:
 
-2019-12-04:
-0805 PROJ-123: improve deployment infrastructure
-0915
-0930 daily standup
-0945
+::
+
+    2019-12-04:
+    0805 PROJ-123: improve deployment infrastructure
+    0915
+    0930 daily standup
+    0945
 
 The *vcs* option currently supports *git* and *svn*. In the *git* and *svn* sections you can use the *repos* option to specify paths to repositories, one per line, that will be searched for log entries from the relevant date.
 In *git* the *author* option may hold a string that will be used for filtering for authors, i.e. will be passed with --author to git when retrieving the log. If it is ommitted, all log entries will be considered.

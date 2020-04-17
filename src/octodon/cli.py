@@ -280,18 +280,27 @@ class Octodon(Cmd):
         def prepare_outfile(args):
             if len(args) >= 1 and args[0]:
                 filename = os.path.expanduser(args[0])
-                outfile = open(filename, "w")
+                try:
+                    outfile = open(filename, "w")
+                except FileNotFoundError as fnfe:
+                    print(
+                        "Could not open {0}: {1}".format(filename, fnfe),
+                        file=sys.stderr,
+                    )
+                    outfile = None
                 yield outfile
-                print("Printed to {}".format(filename))
-                outfile.close()
+                if outfile:
+                    print("Printed to {}".format(filename), file=sys.stderr)
+                    outfile.close()
             else:
                 yield sys.stdout
 
         with prepare_outfile(args) as outfile:
-            if self.list_template:
-                print(self.get_templated_list(self.bookings), file=outfile)
-            else:
-                print(self.get_simple_list(self.bookings), file=outfile)
+            if outfile:
+                if self.list_template:
+                    print(self.get_templated_list(self.bookings), file=outfile)
+                else:
+                    print(self.get_simple_list(self.bookings), file=outfile)
 
     def get_simple_list(self, bookings):
         try:

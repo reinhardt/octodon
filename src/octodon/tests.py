@@ -10,6 +10,7 @@ from octodon.utils import clean_up_bookings
 from octodon.utils import format_spent_time
 from octodon.utils import read_from_file
 from octodon.utils import write_to_file
+from octodon.version_control import VCSLog
 from pyactiveresource.connection import ResourceNotFound
 from tempfile import mkdtemp
 from tempfile import mkstemp
@@ -340,6 +341,47 @@ class TestOctodon(unittest.TestCase):
                     "time": 88.238095238095238,
                 },
             ],
+        )
+
+
+class TestVCSLog(unittest.TestCase):
+    def test_one_ticket(self):
+        vcslog = VCSLog()
+        log = """
+commit 4aa68f1777a82605e8bd7acdb28342bfa23daea9
+Author: Manuel Reinhardt <reinhardt@syslab.com>
+Date:   Thu Apr 15 15:58:22 2020 +0200
+ Fix permissions
+
+commit d5031fdb0025ce79d8336c20df4be960417cdc2f
+Author: Manuel Reinhardt <reinhardt@syslab.com>
+Date:   Thu Apr 15 16:14:48 2020 +0200
+ Extended creation script. Refs DMY-312
+        """
+        self.assertEqual(
+            vcslog.extract_loginfo(log), {"DMY-312": ["Extended creation script"]}
+        )
+
+    @unittest.skip("Implement me!")
+    def test_two_tickets(self):
+        vcslog = VCSLog()
+        log = """
+commit 4aa68f1777a82605e8bd7acdb28342bfa23daea9
+Author: Manuel Reinhardt <reinhardt@syslab.com>
+Date:   Thu Apr 15 15:58:22 2020 +0200
+ Fix permissions
+
+commit d5031fdb0025ce79d8336c20df4be960417cdc2f
+Author: Manuel Reinhardt <reinhardt@syslab.com>
+Date:   Thu Apr 15 16:14:48 2020 +0200
+ Extended creation script. Refs DMY-312 DMY-314
+        """
+        self.assertEqual(
+            vcslog.extract_loginfo(log),
+            {
+                "DMY-312": ["Extended creation script"],
+                "DMY-314": ["Extended creation script"],
+            },
         )
 
 

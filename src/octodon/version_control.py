@@ -5,7 +5,7 @@ import sys
 from datetime import datetime, timedelta
 
 ref_pattern = re.compile("(?:    )?(.*)[# ]([A-Z0-9]+-[0-9]+)")
-ref_keyword_pattern = re.compile("([Rr]efs[ $]|[Ff]ixes[ $])$")
+ref_keyword_pattern = re.compile("([Rr]efs? ?|[Ff]ixes ?)$")
 
 
 class VCSLog(object):

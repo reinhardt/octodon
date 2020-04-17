@@ -84,7 +84,12 @@ def _initialize_octodon_env(upgrade=False):
   return True
 
 if _initialize_octodon_env():
+    import re
+    import subprocess
+    from datetime import datetime
     from octodon.clockwork import ClockWorkTimeLog
+    from octodon.cli import get_config
+    from octodon.tracking import ticket_pattern_jira
     from octodon.utils import format_spent_time
     from octodon.utils import get_time_sum
 
@@ -95,6 +100,35 @@ def OctodonTimeSum():
     sum = get_time_sum(bookings)
     print(format_spent_time(sum))
 
+def OctodonClock():
+    line = vim.current.line
+    if not re.match("^[0-9]{4}.*", line):
+        now = datetime.now().strftime("%H%M")
+        line = f"{now} {line}"
+    ticket_match = ticket_pattern_jira.search(line)
+    if ticket_match:
+        config = get_config()
+        if config.has_section("jira"):
+            from octodon.jira import Jira
+            if config.has_option("jira", "password_command"):
+                cmd = config.get("jira", "password_command")
+                password = (
+                    subprocess.check_output(cmd.split(" ")).strip().decode("utf-8")
+                )
+                config.set("jira", "pass", password)
+            jira = Jira(
+                config.get("jira", "url"),
+                config.get("jira", "user"),
+                config.get("jira", "pass"),
+            )
+            issue_id = ticket_match[1]
+            issue = jira.get_issue(issue_id)
+            summary = issue.fields.summary
+            issue_text = f"{issue_id}: {summary}"
+            if issue_text not in line:
+                line = line.replace(issue_id, issue_text)
+    vim.current.line = line
+
 def OctodonUpgrade():
   _initialize_octodon_env(upgrade=True)
 
@@ -103,6 +137,7 @@ def OctodonVersion():
 
 endpython3
 
+command! OctodonClock :py3 OctodonClock()
 command! OctodonTimeSum :py3 OctodonTimeSum()
 command! OctodonUpgrade :py3 OctodonUpgrade()
 command! OctodonVersion :py3 OctodonVersion()

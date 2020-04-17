@@ -64,3 +64,5 @@ You can install the vim plugin via vundle, pathogen, etc. by adding this to your
     Plugin "reinhardt/octodon"
 
 If you have a plaintext time log file open, the command :OctodonTimeSum shows you the total time tracked today.
+
+:OctodonClock inserts the time at the beginning of the current line and if a jira ticket number is on the line it adds the ticket's summary.

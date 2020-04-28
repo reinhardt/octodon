@@ -129,6 +129,14 @@ def OctodonClock():
                 line = line.replace(issue_id, issue_text)
     vim.current.line = line
 
+    current_line_no = vim.current.window.cursor[0] - 1
+    previous_line_no = current_line_no - 1
+    print(vim.current.buffer[previous_line_no].strip())
+    if previous_line_no < 0 or not vim.current.buffer[previous_line_no].strip():
+        date_line = "{}:".format(datetime.now().strftime("%Y-%m-%d"))
+        buffer = vim.current.buffer.range(0, current_line_no)
+        buffer.append(date_line)
+
 def OctodonUpgrade():
   _initialize_octodon_env(upgrade=True)
 

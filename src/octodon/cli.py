@@ -57,6 +57,10 @@ class Octodon(Cmd):
             with open(list_template_file, "r") as tmpl_file:
                 self.list_template = pystache.parse(tmpl_file.read())
 
+        self.list_file_name = None
+        if config.has_option("main", "list-file"):
+            self.list_file_name = os.path.expanduser(config.get("main", "list-file"))
+
         self.redmine = None
         if config.has_section("redmine"):
             from octodon.redmine import Redmine
@@ -275,32 +279,58 @@ class Octodon(Cmd):
         bookings = self.time_log.get_timeinfo(date=self.spent_on)
         print(format_spent_time(get_time_sum(bookings)))
 
-    def do_list(self, *args):
-        @contextmanager
-        def prepare_outfile(args):
-            if len(args) >= 1 and args[0]:
-                filename = os.path.expanduser(args[0])
-                try:
-                    outfile = open(filename, "w")
-                except FileNotFoundError as fnfe:
-                    print(
-                        "Could not open {0}: {1}".format(filename, fnfe),
-                        file=sys.stderr,
-                    )
-                    outfile = None
-                yield outfile
-                if outfile:
-                    print("Printed to {}".format(filename), file=sys.stderr)
-                    outfile.close()
-            else:
-                yield sys.stdout
+    def do_list(self, arg):
+        """ Print the current bookings or save them to a file.
+        Subcommands: show \tsave
+        """
+        args = filter(None, arg.split(" "))
+        subcommand = next(args, "show")
+        filename = next(args, None)
 
-        with prepare_outfile(args) as outfile:
-            if outfile:
+        if subcommand not in ["show", "save"]:
+            print("Unknown subcommand {}".format(subcommand))
+            return
+        if subcommand == "save":
+            if filename:
+                filename = os.path.expanduser(filename)
+            else:
+                filename = self.list_file_name
+            if not filename:
+                print("Error: File name is required")
+                return
+        elif subcommand == "show":
+            if filename:
+                print("Subcommand '{}' takes no arguments".format(subcommand))
+                return
+            filename = "-"
+
+        try:
+            with self.prepare_outfile(filename) as outfile:
                 if self.list_template:
                     print(self.get_templated_list(self.bookings), file=outfile)
                 else:
                     print(self.get_simple_list(self.bookings), file=outfile)
+        except FileNotFoundError as fnfe:
+            print(
+                "Could not open {0}: {1}".format(filename, fnfe), file=sys.stderr,
+            )
+            return
+
+        if filename != "-":
+            print("Printed to {}".format(filename), file=sys.stderr)
+
+    @contextmanager
+    def prepare_outfile(self, filename):
+        outfile = None
+        try:
+            if filename == "-":
+                outfile = sys.stdout
+            else:
+                outfile = open(filename, "w")
+            yield outfile
+        finally:
+            if filename != "-" and outfile is not None:
+                outfile.close()
 
     def get_simple_list(self, bookings):
         try:

@@ -4,6 +4,9 @@ vcs =
     git
     svn
 source = plaintext
+list-template-file = ~/octodon.md.tmpl
+list-item-template = * {description}: {comments}
+list-file = ~/octodon.md
 project-mapping =
     project-1 my-project-i
 task-mapping =

@@ -1,11 +1,35 @@
 import re
 import sys
 from octodon.exceptions import NotFound
+from octodon.issue import Issue
 from octodon.utils import get_default_activity
 from pyactiveresource.activeresource import ActiveResource
 from pyactiveresource import connection
 
 ticket_pattern_redmine = re.compile("#?([0-9]+)")
+
+
+class RedmineIssue(Issue):
+    def __init__(self, issue, Projects=None):
+        self.issue = issue
+        self.Projects = Projects
+
+    def get_tracker(self):
+        return self.issue["tracker"]["name"]
+
+    def get_title(self):
+        return self.issue["subject"]
+
+    def get_project(self):
+        project_id = self.issue["project"]["id"]
+        return self.Projects.get(project_id, {}).get("identifier")
+
+    def get_contracts(self):
+        return (
+            f.get("value", [])
+            for f in self.issue["custom_fields"]
+            if f["name"].startswith("Contracts")
+        )
 
 
 class Redmine(object):
@@ -40,11 +64,11 @@ class Redmine(object):
 
     def get_issue(self, issue_id):
         try:
-            return self.Issue.get(int(issue_id))
+            return RedmineIssue(self.Issue.get(int(issue_id)), Projects=self.Projects)
         except (connection.ResourceNotFound, connection.Error):
             raise NotFound()
 
-    def book_redmine(self, bookings):
+    def book_time(self, bookings):
         default_activity = get_default_activity(self.activities)
         for entry in bookings:
             if not ticket_pattern_redmine.match(entry["issue_id"]):

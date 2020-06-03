@@ -2,26 +2,51 @@ from __future__ import absolute_import
 from datetime import datetime
 from jira import JIRA
 from jira import JIRAError
+from octodon.issue import Issue
 
 # from octodon.exceptions import ConnectionError
 from octodon.exceptions import NotFound
-from octodon.tracking import ticket_pattern_jira
+import re
 import sys
 
 
+class JiraIssue(Issue):
+    def __init__(self, issue):
+        self.issue = issue
+
+    def get_tracker(self):
+        return self.issue.fields.issuetype.name
+
+    def get_title(self):
+        return self.issue.fields.summary
+
+    def get_project(self):
+        return self.issue.fields.project.key
+
+    def get_contracts(self):
+        contracts_field = self.issue.fields.customfield_10902
+        return (
+            [contracts_field.child.value] if hasattr(contracts_field, "child") else []
+        )
+
+
 class Jira(object):
+    ticket_pattern = re.compile("#?([A-Z]+-[0-9]+)")
+
     def __init__(self, url, user, password):
         self.jira = JIRA(url, auth=(user, password))
 
     def get_issue(self, issue_id):
+        if not self.ticket_pattern.match(issue_id):
+            return None
         try:
-            return self.jira.issue(issue_id)
+            return JiraIssue(self.jira.issue(issue_id))
         except JIRAError as je:
             raise NotFound(status_code=je.status_code, text=je.text)
 
-    def book_jira(self, bookings):
+    def book_time(self, bookings):
         for entry in bookings:
-            if not ticket_pattern_jira.match(entry["issue_id"]):
+            if not self.ticket_pattern.match(entry["issue_id"]):
                 continue
             rm_entry = entry.copy()
 

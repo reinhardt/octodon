@@ -1,34 +1,11 @@
 import os
 import pickle
 import socket
-import re
 import sys
 
 # from octodon.exceptions import ConnectionError
 from octodon.exceptions import NotFound
 from octodon.utils import get_data_home
-
-try:
-    from pyactiveresource.connection import ResourceNotFound
-    from pyactiveresource.connection import Error
-except ImportError:
-
-    class ResourceNotFound(Exception):
-        pass
-
-    class Error(Exception):
-        pass
-
-
-try:
-    from jira import JIRAError
-except ImportError:
-
-    class JIRAError(Exception):
-        pass
-
-
-ticket_pattern_jira = re.compile("#?([A-Z]+-[0-9]+)")
 
 
 class Tracking(object):
@@ -45,6 +22,7 @@ class Tracking(object):
         self.redmine = redmine
         self.jira = jira
         self.harvest = harvest
+        self.trackers = list(filter(None, [self.jira, self.redmine]))
         self.project_mapping = project_mapping
         self.task_mapping = task_mapping
         self._projects = []
@@ -91,10 +69,10 @@ class Tracking(object):
 
             issue_title = ""
             if entry["issue_id"] is not None:
-                if ticket_pattern_jira.match(entry["issue_id"]) and self.jira:
+                for tracker in self.trackers:
+                    issue = None
                     try:
-                        issue = self.jira.get_issue(entry["issue_id"])
-                        issue_title = issue.fields.summary
+                        issue = tracker.get_issue(entry["issue_id"])
                     except NotFound as nf:
                         print(
                             u"Could not find issue {0}: {1} - {2}".format(
@@ -102,15 +80,16 @@ class Tracking(object):
                             ),
                             file=sys.stderr,
                         )
-                if not issue_title and self.redmine:
-                    try:
-                        issue = self.redmine.get_issue(entry["issue_id"])
-                        issue_title = issue["subject"]
-                    except (NotFound, ConnectionError):
+                    except (ConnectionError, socket.error):
                         print(
                             "Could not find issue " + str(entry["issue_id"]),
                             file=sys.stderr,
                         )
+                    if issue is None:
+                        continue
+                    issue_title = issue.get_title()
+                    if issue_title:
+                        break
 
             issue_desc = ""
             if entry["issue_id"]:
@@ -191,9 +170,9 @@ class Tracking(object):
         project = ""
         contracts = []
         if issue_no is not None:
-            if ticket_pattern_jira.match(issue_no) and self.jira:
+            for tracker in self.trackers:
                 try:
-                    issue = self.jira.jira.issue(issue_no)
+                    issue = tracker.get_issue(issue_no)
                 except NotFound as nf:
                     print(
                         u"Could not find issue {0}: {1} - {2}".format(
@@ -201,38 +180,23 @@ class Tracking(object):
                         ),
                         file=sys.stderr,
                     )
-            elif self.redmine:
-                try:
-                    issue = self.redmine.get_issue(issue_no)
-                except (NotFound, ConnectionError, socket.error):
+                except (ConnectionError, socket.error):
                     print("Could not find issue " + str(issue_no), file=sys.stderr)
+                if issue:
+                    break
 
         if issue is not None:
-            if ticket_pattern_jira.match(issue_no) and self.jira:
-                project = issue.fields.project.key
-                contracts_field = issue.fields.customfield_10902
-                contracts = (
-                    [contracts_field.child.value]
-                    if hasattr(contracts_field, "child")
-                    else []
+            try:
+                project = issue.get_project()
+            except Exception as e:
+                print(
+                    "Could not get project identifier: {0}; {1}".format(
+                        issue["project"]["name"], e
+                    ),
+                    file=sys.stderr,
                 )
-            elif self.redmine:
-                pid = issue["project"]["id"]
-                try:
-                    project = self.redmine.Projects.get(pid)["identifier"]
-                except Exception as e:
-                    print(
-                        "Could not get project identifier: {0}; {1}".format(
-                            issue["project"]["name"], e
-                        ),
-                        file=sys.stderr,
-                    )
-                    project = ""
-                contracts = [
-                    f.get("value", [])
-                    for f in issue["custom_fields"]
-                    if f["name"].startswith("Contracts")
-                ]
+                project = ""
+            contracts = issue.get_contracts()
 
         for tag in entry["tags"]:
             if tag in harvest_projects:
@@ -241,10 +205,8 @@ class Tracking(object):
             project = entry["category"]
 
         tracker = None
-        if issue_no and ticket_pattern_jira.match(issue_no) and self.jira:
-            tracker = issue and issue.fields.issuetype.name
-        elif self.redmine:
-            tracker = issue and issue["tracker"]["name"]
+        if issue_no:
+            tracker = issue and issue.get_tracker()
 
         harvest_project = self.guess_project(
             harvest_projects,

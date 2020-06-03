@@ -1,4 +1,4 @@
+jira
 pyactiveresource
 pystache
-python-harvest
-jira
+python-harvest-redux

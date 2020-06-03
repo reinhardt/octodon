@@ -362,7 +362,7 @@ class Octodon(Cmd):
     def do_redmine(self, *args):
         """ Write current bookings to redmine. """
         try:
-            self.redmine.book_redmine(self.bookings)
+            self.redmine.book_time(self.bookings)
         except Exception as e:
             print(
                 "Error while booking - comments too long? Error was: "
@@ -373,7 +373,7 @@ class Octodon(Cmd):
     def do_jira(self, *args):
         """ Write current bookings to jira. """
         try:
-            self.jira.book_jira(self.bookings)
+            self.jira.book_time(self.bookings)
         except Exception as e:
             print(
                 "Error while booking - " "%s: %s" % (e.__class__.__name__, e),

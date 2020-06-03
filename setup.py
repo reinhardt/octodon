@@ -32,11 +32,18 @@ setup(
     author_email="manuel.reinhardt@neon-cathedral.net",
     url="https://pypi.python.org/pypi/octodon",
     license="BSD",
-    packages=find_packages(".", exclude=["ez_setup"]),
+    packages=find_packages("src", exclude=["ez_setup"]),
     package_dir={"": "src"},
+    namespace_packages=["octodon"],
     include_package_data=True,
     zip_safe=False,
-    install_requires=["jira", "pyactiveresource", "python-harvest-redux", "setuptools"],
+    install_requires=[
+        "jira",
+        "pyactiveresource",
+        "pystache",
+        "python-harvest-redux",
+        "setuptools",
+    ],
     extras_require={"test": ["mock"]},
     entry_points="""
       [console_scripts]

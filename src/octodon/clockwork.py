@@ -4,7 +4,7 @@ import sys
 from datetime import datetime
 from datetime import timedelta
 from glob import glob
-from octodon.tracking import ticket_pattern_jira
+from octodon.jira import Jira
 
 
 class ClockWorkTimeLog(object):
@@ -121,7 +121,7 @@ class ClockWorkTimeLog(object):
                     time_match.group(1).replace(":", ""), "%H%M"
                 )
                 next_task["description"] = time_match.group(2).strip()
-                issue_match = ticket_pattern_jira.search(next_task["description"])
+                issue_match = Jira.ticket_pattern.search(next_task["description"])
                 next_task["issue_id"] = None
                 if issue_match:
                     next_task["issue_id"] = issue_match.group(1)

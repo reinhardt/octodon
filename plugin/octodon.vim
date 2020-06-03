@@ -89,7 +89,7 @@ if _initialize_octodon_env():
     from datetime import datetime
     from octodon.clockwork import ClockWorkTimeLog
     from octodon.cli import get_config
-    from octodon.tracking import ticket_pattern_jira
+    from octodon.jira import Jira
     from octodon.utils import format_spent_time
     from octodon.utils import get_time_sum
 
@@ -105,7 +105,7 @@ def OctodonClock():
     if not re.match("^[0-9]{4}.*", line):
         now = datetime.now().strftime("%H%M")
         line = f"{now} {line}"
-    ticket_match = ticket_pattern_jira.search(line)
+    ticket_match = Jira.ticket_pattern.search(line)
     if ticket_match:
         config = get_config()
         if config.has_section("jira"):
@@ -123,7 +123,7 @@ def OctodonClock():
             )
             issue_id = ticket_match[1]
             issue = jira.get_issue(issue_id)
-            summary = issue.fields.summary
+            summary = issue.get_title()
             issue_text = f"{issue_id}: {summary}"
             if issue_text not in line:
                 line = line.replace(issue_id, issue_text)

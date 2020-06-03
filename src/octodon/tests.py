@@ -2,10 +2,12 @@ import os
 import unittest
 from datetime import date
 from datetime import datetime
-from mock import patch
 from octodon.clockwork import ClockWorkTimeLog
 from octodon.exceptions import NotFound
+from octodon.jira import Jira
 from octodon.tracking import Tracking
+from octodon.redmine import Redmine
+from octodon.redmine import RedmineIssue
 from octodon.utils import clean_up_bookings
 from octodon.utils import format_spent_time
 from octodon.utils import read_from_file
@@ -14,6 +16,7 @@ from octodon.version_control import VCSLog
 from pyactiveresource.connection import ResourceNotFound
 from tempfile import mkdtemp
 from tempfile import mkstemp
+from unittest.mock import patch
 
 CACHEFILE = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "octodon-projects.test.pickle"
@@ -64,11 +67,14 @@ class MockHarvest(object):
         self.entries.append(entry)
 
 
-class MockRedmine(object):
+class MockRedmine(Redmine):
     Projects = {
         "22": {"id": "22", "name": "Cynaptic", "identifier": "cynaptic_3000"},
         "23": {"id": "23", "name": "RRZZAA", "identifier": "rrzzaa"},
     }
+
+    def __init__(self, *args):
+        pass
 
     def get_issue(self, issue):
         issues = {
@@ -93,7 +99,12 @@ class MockRedmine(object):
         }
         if issue not in issues:
             raise NotFound()
-        return issues[issue]
+        return RedmineIssue(issues[issue], Projects=self.Projects)
+
+
+class MockJira(Jira):
+    def __init__(self, *args):
+        pass
 
 
 class TestOctodon(unittest.TestCase):
@@ -142,6 +153,7 @@ class TestOctodon(unittest.TestCase):
         task_mapping = {u"meeting": u"Meeting"}
         tracking = Tracking(
             redmine=MockRedmine(),
+            jira=MockJira(),
             harvest=harvest,
             project_mapping=project_mapping,
             task_mapping=task_mapping,

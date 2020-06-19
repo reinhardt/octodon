@@ -4,10 +4,12 @@ import argparse
 import pystache
 import re
 import subprocess
+import socket
 import sys
 from contextlib import contextmanager
 from cmd import Cmd
 from datetime import datetime, timedelta
+from octodon.exceptions import NotFound
 from octodon.tracking import Tracking
 from octodon.utils import clean_up_bookings
 from octodon.utils import format_spent_time
@@ -145,7 +147,7 @@ class Octodon(Cmd):
         harvest = getattr(self, "_harvest", None)
         if harvest is None:
             if self.config.has_section("harvest"):
-                from harvest import Harvest
+                from octodon.harvest import Harvest
 
                 if self.config.has_option("harvest", "password_command"):
                     cmd = self.config.get("harvest", "password_command")
@@ -153,10 +155,32 @@ class Octodon(Cmd):
                         subprocess.check_output(cmd.split(" ")).strip().decode("utf-8")
                     )
                     self.config.set("harvest", "pass", password)
+
+                if self.config.has_option("main", "project-mapping"):
+                    project_mapping = self.config.get("main", "project-mapping")
+                    project_mapping = project_mapping.split("\n")
+                    project_mapping = dict(
+                        [pair.split(" ") for pair in project_mapping if pair]
+                    )
+                else:
+                    project_mapping = {}
+
+                if self.config.has_option("main", "task-mapping"):
+                    task_mapping = self.config.get("main", "task-mapping")
+                    task_mapping = task_mapping.split("\n")
+                    task_mapping = dict(
+                        [pair.split(" ", 1) for pair in task_mapping if pair]
+                    )
+                else:
+                    task_mapping = {}
+
                 self._harvest = harvest = Harvest(
                     self.config.get("harvest", "url"),
                     self.config.get("harvest", "user"),
                     self.config.get("harvest", "pass"),
+                    project_mapping=project_mapping,
+                    task_mapping=task_mapping,
+                    default_task=self.config.get("main", "default-task"),
                 )
             else:
                 self._harvest = None
@@ -166,31 +190,8 @@ class Octodon(Cmd):
     def tracking(self):
         tracking = getattr(self, "_tracking", None)
         if tracking is None:
-            if self.config.has_option("main", "project-mapping"):
-                project_mapping = self.config.get("main", "project-mapping")
-                project_mapping = project_mapping.split("\n")
-                project_mapping = dict(
-                    [pair.split(" ") for pair in project_mapping if pair]
-                )
-            else:
-                project_mapping = {}
-
-            if self.config.has_option("main", "task-mapping"):
-                task_mapping = self.config.get("main", "task-mapping")
-                task_mapping = task_mapping.split("\n")
-                task_mapping = dict(
-                    [pair.split(" ", 1) for pair in task_mapping if pair]
-                )
-            else:
-                task_mapping = {}
-
             self._tracking = tracking = Tracking(
-                redmine=self.redmine,
-                jira=self.jira,
-                harvest=self.harvest,
-                project_mapping=project_mapping,
-                task_mapping=task_mapping,
-                default_task=self.config.get("main", "default-task"),
+                redmine=self.redmine, jira=self.jira, harvest=self.harvest,
             )
         return tracking
 
@@ -201,8 +202,32 @@ class Octodon(Cmd):
             if self.redmine:
                 self._activities.extend(self.redmine.activities)
             if self.harvest:
-                self._activities.extend([act["task"] for act in self.harvest.tasks()])
+                self._activities.extend(self.harvest.activities)
         return self._activities
+
+    def get_issue_title(self, issue_id):
+        issue_title = ""
+        for tracker in self.tracking.trackers:
+            issue = None
+            try:
+                issue = tracker.get_issue(issue_id)
+            except NotFound as nf:
+                print(
+                    u"Could not find issue {0}: {1} - {2}".format(
+                        str(issue_id), nf.status_code, nf.text
+                    ),
+                    file=sys.stderr,
+                )
+            except (ConnectionError, socket.error):
+                print(
+                    "Could not find issue " + str(issue_id), file=sys.stderr,
+                )
+            if issue is None:
+                continue
+            issue_title = issue.get_title()
+            if issue_title:
+                break
+        return issue_title
 
     @property
     def bookings(self):
@@ -215,6 +240,12 @@ class Octodon(Cmd):
             else:
                 self.spent_on, bookings = self.get_bookings(self.spent_on)
                 bookings = clean_up_bookings(bookings)
+
+            for entry in bookings:
+                if entry["issue_id"] is not None:
+                    entry["issue_title"] = self.get_issue_title(entry["issue_id"])
+                else:
+                    entry["issue_title"] = ""
             self._bookings = bookings
         return bookings
 
@@ -247,11 +278,11 @@ class Octodon(Cmd):
         bookings = self.time_log.get_timeinfo(
             date=spent_on, loginfo=loginfo, activities=self.activities
         )
-        if self.tracking.harvest is not None:
-            for entry in bookings:
-                project, task = self.tracking.get_harvest_target(entry)
-                entry["project"] = project
-                entry["activity"] = task
+        for entry in bookings:
+            project, task = self.tracking.get_booking_target(entry)
+            entry["project"] = project
+            entry["activity"] = task
+
         return bookings
 
     def check_issue_and_comment(self, bookings):
@@ -383,7 +414,7 @@ class Octodon(Cmd):
     def do_harvest(self, *args):
         """ Write current bookings to harvest. """
         try:
-            self.tracking.book_harvest(self.bookings)
+            self.harvest.book_time(self.bookings)
         except Exception as e:
             print(
                 "Error while booking - " "%s: %s" % (e.__class__.__name__, e),

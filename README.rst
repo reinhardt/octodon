@@ -52,7 +52,13 @@ Relative dates are supported as well, e.g. for the day before yesterday
 
     octodon --date=-2
 
-There is a simple command-line interface. The most important commands are *edit*, which lets you review and modify the time tracking data, and *book*, which writes it to the configured target(s) (e.g. harvest).
+For a simple command-line interface run
+
+::
+
+    octodon shell
+
+The most important commands are *edit*, which lets you review and modify the time tracking data, and *book*, which writes it to the configured target(s) (e.g. harvest). Type *help* to get a list of commands.
 
 VIM PLUGIN
 ----------

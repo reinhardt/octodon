@@ -298,6 +298,8 @@ class Octodon(Cmd):
                 "\n{0}".format(make_table(rows)),
                 file=sys.stderr,
             )
+            return False
+        return True
 
     def print_summary(self, bookings):
         total_time = get_time_sum(bookings)
@@ -388,7 +390,8 @@ class Octodon(Cmd):
         if retval.returncode:
             print("Warning: The editor reported a problem ({})".format(retval))
         self.clear_bookings()
-        self.check_issue_and_comment(self.bookings)
+        if not self.check_issue_and_comment(self.bookings):
+            self.cmdqueue.clear()
 
     def do_redmine(self, *args):
         """ Write current bookings to redmine. """
@@ -532,9 +535,11 @@ def main():
         else:
             raise Exception("unrecognized date format: {0}".format(args.date))
 
-    if args.command:
+    if args.command and args.command != "shell":
         octodon = Octodon(config, spent_on, new_session=True)
         octodon.onecmd(args.command)
     else:
         octodon = Octodon(config, spent_on, new_session=args.new_session)
+        if args.command != "shell":
+            octodon.cmdqueue.extend(["edit", "summary", "book", "list save"])
         octodon.cmdloop()

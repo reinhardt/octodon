@@ -48,6 +48,8 @@ class ClockWorkTimeLog(object):
                     }
                 )
                 bookings.append(fact)
+        for fact in bookings:
+            fact["description"] = self.tag_pattern.sub("", fact["description"]).strip()
         return bookings
 
     def get_raw_log(self, log_path=None):
@@ -125,6 +127,11 @@ class ClockWorkTimeLog(object):
                 next_task["issue_id"] = None
                 if issue_match:
                     next_task["issue_id"] = issue_match.group(1)
+                    next_task["description"] = (
+                        re.compile(Jira.ticket_pattern.pattern + ":?")
+                        .sub("", next_task["description"])
+                        .strip()
+                    )
                 if current_task and current_task["description"]:
                     if next_task["clock"] < current_task["clock"]:
                         next_task["clock"] = next_task["clock"].replace(

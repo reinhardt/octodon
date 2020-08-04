@@ -432,7 +432,7 @@ class TestClockWork(unittest.TestCase):
             clockwork.get_facts(timesheet),
             [
                 {
-                    "description": "Improve usability CGUI-417",
+                    "description": "Improve usability",
                     "issue_id": "CGUI-417",
                     "spent_on": None,
                     "time": 46.0,
@@ -450,7 +450,7 @@ class TestClockWork(unittest.TestCase):
             clockwork.get_facts(timesheet),
             [
                 {
-                    "description": "Improve usability CGUI-417",
+                    "description": "Improve usability",
                     "issue_id": "CGUI-417",
                     "spent_on": datetime(2019, 11, 14),
                     "time": 46.0,
@@ -470,13 +470,13 @@ class TestClockWork(unittest.TestCase):
             clockwork.get_facts(timesheet),
             [
                 {
-                    "description": "Improve usability CGUI-417",
+                    "description": "Improve usability",
                     "issue_id": "CGUI-417",
                     "spent_on": datetime(2019, 11, 14),
                     "time": 46.0,
                 },
                 {
-                    "description": "Improve usability CGUI-417",
+                    "description": "Improve usability",
                     "issue_id": "CGUI-417",
                     "spent_on": datetime(2019, 11, 14),
                     "time": 66.0,
@@ -504,13 +504,13 @@ class TestClockWork(unittest.TestCase):
             facts,
             [
                 {
-                    "description": "Improve usability CGUI-417",
+                    "description": "Improve usability",
                     "issue_id": "CGUI-417",
                     "spent_on": datetime(2019, 11, 14),
                     "time": 40.0,
                 },
                 {
-                    "description": "Manual tests CGUI-422",
+                    "description": "Manual tests",
                     "issue_id": "CGUI-422",
                     "spent_on": datetime(2019, 11, 14),
                     "time": 45.0,
@@ -541,13 +541,13 @@ class TestClockWork(unittest.TestCase):
             facts,
             [
                 {
-                    "description": "Manual tests CGUI-422",
+                    "description": "Manual tests",
                     "issue_id": "CGUI-422",
                     "spent_on": datetime(2019, 11, 14),
                     "time": 45.0,
                 },
                 {
-                    "description": "Improve usability CGUI-417",
+                    "description": "Improve usability",
                     "issue_id": "CGUI-417",
                     "spent_on": datetime(2019, 11, 13),
                     "time": 600.0,
@@ -578,13 +578,13 @@ class TestClockWork(unittest.TestCase):
             facts,
             [
                 {
-                    "description": "Manual tests CGUI-422",
+                    "description": "Manual tests",
                     "issue_id": "CGUI-422",
                     "spent_on": datetime(2019, 11, 13),
                     "time": 15.0 * 60.0 + 45.0,
                 },
                 {
-                    "description": "Improve usability CGUI-417",
+                    "description": "Improve usability",
                     "issue_id": "CGUI-417",
                     "spent_on": datetime(2019, 11, 14),
                     "time": 120.0,
@@ -615,13 +615,13 @@ class TestClockWork(unittest.TestCase):
             facts,
             [
                 {
-                    "description": "Improve usability CGUI-417",
+                    "description": "Improve usability",
                     "issue_id": "CGUI-417",
                     "spent_on": datetime(2019, 11, 14),
                     "time": 120.0,
                 },
                 {
-                    "description": "Manual tests CGUI-422",
+                    "description": "Manual tests",
                     "issue_id": "CGUI-422",
                     "spent_on": datetime(2019, 11, 13),
                     "time": 15.0 * 60.0 + 45.0,
@@ -687,19 +687,19 @@ class TestClockWork(unittest.TestCase):
     def test_get_timeinfo(self):
         facts = [
             {
-                "description": "Improve usability CGUI-417 #cgui-support",
+                "description": "Improve usability #cgui-support",
                 "issue_id": "CGUI-417",
                 "spent_on": datetime(2019, 11, 14),
                 "time": 32.0,
             },
             {
-                "description": "Improve usability CGUI-417 #cgui-support",
+                "description": "Improve usability #cgui-support",
                 "issue_id": "CGUI-417",
                 "spent_on": datetime(2019, 11, 15),
                 "time": 45.0,
             },
             {
-                "description": "Improve usability CGUI-417 #cgui-support",
+                "description": "Improve usability #cgui-support",
                 "issue_id": "CGUI-417",
                 "spent_on": datetime(2019, 11, 15),
                 "time": 23.0,
@@ -719,7 +719,7 @@ class TestClockWork(unittest.TestCase):
             clockwork.get_timeinfo(datetime(2019, 11, 15)),
             [
                 {
-                    "description": "Improve usability CGUI-417 #cgui-support",
+                    "description": "Improve usability",
                     "issue_id": "CGUI-417",
                     "spent_on": datetime(2019, 11, 15),
                     "time": 68.0,

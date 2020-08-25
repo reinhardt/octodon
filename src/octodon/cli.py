@@ -4,12 +4,10 @@ import argparse
 import pystache
 import re
 import subprocess
-import socket
 import sys
 from contextlib import contextmanager
 from cmd import Cmd
 from datetime import datetime, timedelta
-from octodon.exceptions import NotFound
 from octodon.tracking import Tracking
 from octodon.utils import clean_up_bookings
 from octodon.utils import format_spent_time
@@ -30,20 +28,28 @@ class Octodon(Cmd):
         Cmd.__init__(self, *args)
         self.config = config
 
+        ticket_patterns = []
+        if self.redmine_class:
+            ticket_patterns.append(self.redmine_class.ticket_pattern)
+        if self.jira_class:
+            ticket_patterns.append(self.jira_class.ticket_pattern)
+
         if config.get("main", "source") == "hamster":
             from octodon.hamster import HamsterTimeLog
 
-            self.time_log = HamsterTimeLog()
+            self.time_log = HamsterTimeLog(ticket_patterns=ticket_patterns)
         elif config.get("main", "source") == "orgmode":
             from octodon.orgmode import OrgModeTimeLog
 
             filename = config.get("orgmode", "filename")
-            self.time_log = OrgModeTimeLog(filename)
+            self.time_log = OrgModeTimeLog(filename, ticket_patterns=ticket_patterns)
         elif config.get("main", "source") == "plaintext":
             from octodon.clockwork import ClockWorkTimeLog
 
             log_path = config.get("plaintext", "log_path")
-            self.time_log = ClockWorkTimeLog(log_path=log_path)
+            self.time_log = ClockWorkTimeLog(
+                ticket_patterns=ticket_patterns, log_path=log_path
+            )
 
         self.editor = config.get("main", "editor")
 
@@ -62,22 +68,6 @@ class Octodon(Cmd):
         self.list_file_name = None
         if config.has_option("main", "list-file"):
             self.list_file_name = os.path.expanduser(config.get("main", "list-file"))
-
-        self.redmine = None
-        if config.has_section("redmine"):
-            from octodon.redmine import Redmine
-
-            if config.has_option("redmine", "password_command"):
-                cmd = config.get("redmine", "password_command")
-                password = (
-                    subprocess.check_output(cmd.split(" ")).strip().decode("utf-8")
-                )
-                config.set("redmine", "pass", password)
-            self.redmine = Redmine(
-                config.get("redmine", "url"),
-                config.get("redmine", "user"),
-                config.get("redmine", "pass"),
-            )
 
         vcs_class = {"git": GitLog, "svn": SvnLog}
 
@@ -123,67 +113,103 @@ class Octodon(Cmd):
         self.spent_on = spent_on
 
     @property
+    def jira_class(self):
+        if self.config.has_section("jira"):
+            from octodon.jira import Jira
+
+            return Jira
+        else:
+            return None
+
+    @property
+    def redmine_class(self):
+        if self.config.has_section("redmine"):
+            from octodon.redmine import Redmine
+
+            return Redmine
+        else:
+            return None
+
+    @property
+    def harvest_class(self):
+        if self.config.has_section("harvest"):
+            from octodon.harvest import Harvest
+
+            return Harvest
+        else:
+            return None
+
+    @property
     def jira(self):
         jira = getattr(self, "_jira", None)
-        if jira is None:
-            if self.config.has_section("jira"):
-                from octodon.jira import Jira
-
-                if self.config.has_option("jira", "password_command"):
-                    cmd = self.config.get("jira", "password_command")
-                    password = (
-                        subprocess.check_output(cmd.split(" ")).strip().decode("utf-8")
-                    )
-                    self.config.set("jira", "pass", password)
-                self._jira = jira = Jira(
-                    self.config.get("jira", "url"),
-                    self.config.get("jira", "user"),
-                    self.config.get("jira", "pass"),
+        if jira is None and self.jira_class is not None:
+            if self.config.has_option("jira", "password_command"):
+                cmd = self.config.get("jira", "password_command")
+                password = (
+                    subprocess.check_output(cmd.split(" ")).strip().decode("utf-8")
                 )
+                self.config.set("jira", "pass", password)
+            self._jira = jira = self.jira_class(
+                self.config.get("jira", "url"),
+                self.config.get("jira", "user"),
+                self.config.get("jira", "pass"),
+            )
         return jira
+
+    @property
+    def redmine(self):
+        redmine = getattr(self, "_redmine", None)
+        if redmine is None and self.redmine_class is not None:
+            if config.has_option("redmine", "password_command"):
+                cmd = config.get("redmine", "password_command")
+                password = (
+                    subprocess.check_output(cmd.split(" ")).strip().decode("utf-8")
+                )
+                config.set("redmine", "pass", password)
+            self._redmine = redmine = self.redmine_class(
+                config.get("redmine", "url"),
+                config.get("redmine", "user"),
+                config.get("redmine", "pass"),
+            )
+        return redmine
 
     @property
     def harvest(self):
         harvest = getattr(self, "_harvest", None)
-        if harvest is None:
-            if self.config.has_section("harvest"):
-                from octodon.harvest import Harvest
+        if harvest is None and self.harvest_class is not None:
+            if self.config.has_option("harvest", "password_command"):
+                cmd = self.config.get("harvest", "password_command")
+                password = (
+                    subprocess.check_output(cmd.split(" ")).strip().decode("utf-8")
+                )
+                self.config.set("harvest", "pass", password)
 
-                if self.config.has_option("harvest", "password_command"):
-                    cmd = self.config.get("harvest", "password_command")
-                    password = (
-                        subprocess.check_output(cmd.split(" ")).strip().decode("utf-8")
-                    )
-                    self.config.set("harvest", "pass", password)
-
-                if self.config.has_option("main", "project-mapping"):
-                    project_mapping = self.config.get("main", "project-mapping")
-                    project_mapping = project_mapping.split("\n")
-                    project_mapping = dict(
-                        [pair.split(" ") for pair in project_mapping if pair]
-                    )
-                else:
-                    project_mapping = {}
-
-                if self.config.has_option("main", "task-mapping"):
-                    task_mapping = self.config.get("main", "task-mapping")
-                    task_mapping = task_mapping.split("\n")
-                    task_mapping = dict(
-                        [pair.split(" ", 1) for pair in task_mapping if pair]
-                    )
-                else:
-                    task_mapping = {}
-
-                self._harvest = harvest = Harvest(
-                    self.config.get("harvest", "url"),
-                    self.config.get("harvest", "user"),
-                    self.config.get("harvest", "pass"),
-                    project_mapping=project_mapping,
-                    task_mapping=task_mapping,
-                    default_task=self.config.get("main", "default-task"),
+            if self.config.has_option("main", "project-mapping"):
+                project_mapping = self.config.get("main", "project-mapping")
+                project_mapping = project_mapping.split("\n")
+                project_mapping = dict(
+                    [pair.split(" ") for pair in project_mapping if pair]
                 )
             else:
-                self._harvest = None
+                project_mapping = {}
+
+            if self.config.has_option("main", "task-mapping"):
+                task_mapping = self.config.get("main", "task-mapping")
+                task_mapping = task_mapping.split("\n")
+                task_mapping = dict(
+                    [pair.split(" ", 1) for pair in task_mapping if pair]
+                )
+            else:
+                task_mapping = {}
+
+            self._harvest = harvest = self.harvest_class(
+                self.config.get("harvest", "url"),
+                self.config.get("harvest", "user"),
+                self.config.get("harvest", "pass"),
+                project_mapping=project_mapping,
+                task_mapping=task_mapping,
+                default_task=self.config.get("main", "default-task"),
+            )
         return harvest
 
     @property
@@ -205,30 +231,6 @@ class Octodon(Cmd):
                 self._activities.extend(self.harvest.activities)
         return self._activities
 
-    def get_issue_title(self, issue_id):
-        issue_title = ""
-        for tracker in self.tracking.trackers:
-            issue = None
-            try:
-                issue = tracker.get_issue(issue_id)
-            except NotFound as nf:
-                print(
-                    u"Could not find issue {0}: {1} - {2}".format(
-                        str(issue_id), nf.status_code, nf.text
-                    ),
-                    file=sys.stderr,
-                )
-            except (ConnectionError, socket.error):
-                print(
-                    "Could not find issue " + str(issue_id), file=sys.stderr,
-                )
-            if issue is None:
-                continue
-            issue_title = issue.get_title()
-            if issue_title:
-                break
-        return issue_title
-
     @property
     def bookings(self):
         bookings = getattr(self, "_bookings", None)
@@ -243,7 +245,9 @@ class Octodon(Cmd):
 
             for entry in bookings:
                 if entry["issue_id"] is not None:
-                    entry["issue_title"] = self.get_issue_title(entry["issue_id"])
+                    entry["issue_title"] = self.tracking.get_issue_title(
+                        entry["issue_id"]
+                    )
                 else:
                     entry["issue_title"] = ""
             self._bookings = bookings
@@ -437,9 +441,9 @@ class Octodon(Cmd):
         old_bookings = self.bookings[:]
         self.spent_on, bookings = self.get_bookings(self.spent_on)
         bookings = clean_up_bookings(bookings)
-        import ipdb
+        import pdb
 
-        ipdb.set_trace()
+        pdb.set_trace()
 
     def do_exit(self, line):
         if os.path.exists(self.sessionfile):

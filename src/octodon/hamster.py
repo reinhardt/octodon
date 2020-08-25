@@ -5,6 +5,9 @@ from octodon.utils import get_ticket_no
 
 
 class HamsterTimeLog(object):
+    def __init__(self, ticket_patterns=[]):
+        self.ticket_patterns = ticket_patterns
+
     def get_timeinfo(self, date=datetime.now(), loginfo={}, activities=[]):
         default_activity = get_default_activity(activities)
 
@@ -27,7 +30,8 @@ class HamsterTimeLog(object):
             ticket = get_ticket_no(
                 ["#" + tag for tag in fact.tags]
                 + [fact.activity]
-                + [fact.description or ""]
+                + [fact.description or ""],
+                ticket_patterns=self.ticket_patterns,
             )
             bookings.append(
                 {

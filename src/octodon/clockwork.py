@@ -4,7 +4,6 @@ import sys
 from datetime import datetime
 from datetime import timedelta
 from glob import glob
-from octodon.jira import Jira
 
 
 class ClockWorkTimeLog(object):
@@ -12,7 +11,8 @@ class ClockWorkTimeLog(object):
     time_pattern = re.compile("^([0-9]{2}:?[0-9]{2}) ?(.*)")
     tag_pattern = re.compile("#([^ ]*)")
 
-    def __init__(self, log_path="time_log.txt"):
+    def __init__(self, ticket_patterns=[], log_path="time_log.txt"):
+        self.ticket_patterns = ticket_patterns
         self.log_path = log_path
 
     def get_timeinfo(self, date=datetime.now(), loginfo={}, activities=[]):
@@ -123,12 +123,21 @@ class ClockWorkTimeLog(object):
                     time_match.group(1).replace(":", ""), "%H%M"
                 )
                 next_task["description"] = time_match.group(2).strip()
-                issue_match = Jira.ticket_pattern.search(next_task["description"])
+                issue_match = next(
+                    filter(
+                        None,
+                        [
+                            ticket_pattern.search(next_task["description"])
+                            for ticket_pattern in self.ticket_patterns
+                        ],
+                    ),
+                    None,
+                )
                 next_task["issue_id"] = None
                 if issue_match:
                     next_task["issue_id"] = issue_match.group(1)
                     next_task["description"] = (
-                        re.compile(Jira.ticket_pattern.pattern + ":?")
+                        re.compile(issue_match.re.pattern + ":?")
                         .sub("", next_task["description"])
                         .strip()
                     )

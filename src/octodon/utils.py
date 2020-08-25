@@ -15,10 +15,16 @@ def get_default_activity(activities):
     return default_activity and default_activity[0] or fallback
 
 
-def get_ticket_no(strings):
-    tickets = [
-        ticket_pattern.search(s).group(1) for s in strings if ticket_pattern.search(s)
-    ]
+def get_ticket_no(strings, ticket_patterns=[ticket_pattern]):
+    tickets = []
+    for ticket_pattern in ticket_patterns:
+        tickets.extend(
+            [
+                ticket_pattern.search(s).group(1)
+                for s in strings
+                if ticket_pattern.search(s)
+            ]
+        )
     return len(tickets) and tickets[0] or None
 
 

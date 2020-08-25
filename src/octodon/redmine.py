@@ -6,8 +6,6 @@ from octodon.utils import get_default_activity
 from pyactiveresource.activeresource import ActiveResource
 from pyactiveresource import connection
 
-ticket_pattern_redmine = re.compile("#?([0-9]+)")
-
 
 class RedmineIssue(Issue):
     def __init__(self, issue, Projects=None):
@@ -33,6 +31,8 @@ class RedmineIssue(Issue):
 
 
 class Redmine(object):
+    ticket_pattern = re.compile("#?([0-9]+)")
+
     def __init__(self, url, user, password):
         class RedmineResource(ActiveResource):
             _site = url
@@ -71,7 +71,7 @@ class Redmine(object):
     def book_time(self, bookings):
         default_activity = get_default_activity(self.activities)
         for entry in bookings:
-            if not ticket_pattern_redmine.match(entry["issue_id"]):
+            if not self.ticket_pattern.match(entry["issue_id"]):
                 continue
             if entry["issue_id"] is None:
                 print(

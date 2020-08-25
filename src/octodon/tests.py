@@ -424,7 +424,7 @@ Date:   Thu Apr 15 16:14:48 2020 +0200
 
 class TestClockWork(unittest.TestCase):
     def test_single_entry(self):
-        clockwork = ClockWorkTimeLog()
+        clockwork = ClockWorkTimeLog(ticket_patterns=[Jira.ticket_pattern])
         timesheet = """0614 Improve usability CGUI-417
 0700
 """
@@ -441,7 +441,7 @@ class TestClockWork(unittest.TestCase):
         )
 
     def test_single_entry_with_date(self):
-        clockwork = ClockWorkTimeLog()
+        clockwork = ClockWorkTimeLog(ticket_patterns=[Jira.ticket_pattern])
         timesheet = """2019-11-14:
 0614 Improve usability CGUI-417
 0700
@@ -459,7 +459,7 @@ class TestClockWork(unittest.TestCase):
         )
 
     def test_break_between_entries(self):
-        clockwork = ClockWorkTimeLog()
+        clockwork = ClockWorkTimeLog(ticket_patterns=[Jira.ticket_pattern])
         timesheet = """2019-11-14:
 0614 Improve usability CGUI-417
 0700
@@ -485,7 +485,7 @@ class TestClockWork(unittest.TestCase):
         )
 
     def test_currently_running_task(self):
-        clockwork = ClockWorkTimeLog()
+        clockwork = ClockWorkTimeLog(ticket_patterns=[Jira.ticket_pattern])
         timesheet = """2019-11-14:
 0735 Improve usability CGUI-417
 0815 Manual tests CGUI-422
@@ -519,7 +519,7 @@ class TestClockWork(unittest.TestCase):
         )
 
     def test_currently_running_task_next_day_reverse_order(self):
-        clockwork = ClockWorkTimeLog()
+        clockwork = ClockWorkTimeLog(ticket_patterns=[Jira.ticket_pattern])
         timesheet = """2019-11-14:
 0815 Manual tests CGUI-422
 
@@ -556,7 +556,7 @@ class TestClockWork(unittest.TestCase):
         )
 
     def test_unterminated_task(self):
-        clockwork = ClockWorkTimeLog()
+        clockwork = ClockWorkTimeLog(ticket_patterns=[Jira.ticket_pattern])
         timesheet = """2019-11-13:
 0815 Manual tests CGUI-422
 
@@ -593,7 +593,7 @@ class TestClockWork(unittest.TestCase):
         )
 
     def test_unterminated_task_reverse_order(self):
-        clockwork = ClockWorkTimeLog()
+        clockwork = ClockWorkTimeLog(ticket_patterns=[Jira.ticket_pattern])
         timesheet = """2019-11-14:
 0715 Improve usability CGUI-417
 0915
@@ -638,7 +638,9 @@ class TestClockWork(unittest.TestCase):
 """
         tmp_file.write(log_data)
         tmp_file.close()
-        clockwork = ClockWorkTimeLog(log_path=tmp_path)
+        clockwork = ClockWorkTimeLog(
+            ticket_patterns=[Jira.ticket_pattern], log_path=tmp_path
+        )
         self.assertEqual("".join(clockwork.get_raw_log()), log_data)
 
     def test_get_raw_log_directory(self):
@@ -657,7 +659,9 @@ class TestClockWork(unittest.TestCase):
         tmp_file_2.write(log_data_2)
         tmp_file_1.close()
         tmp_file_2.close()
-        clockwork = ClockWorkTimeLog(log_path=tmp_path)
+        clockwork = ClockWorkTimeLog(
+            ticket_patterns=[Jira.ticket_pattern], log_path=tmp_path
+        )
         raw_log = "".join(clockwork.get_raw_log())
         if raw_log.startswith(log_data_1):
             self.assertEqual(raw_log, "".join((log_data_1, log_data_2)))
@@ -680,7 +684,9 @@ class TestClockWork(unittest.TestCase):
         tmp_file_2.write(log_data_2)
         tmp_file_1.close()
         tmp_file_2.close()
-        clockwork = ClockWorkTimeLog(log_path="{}/*.txt".format(tmp_path))
+        clockwork = ClockWorkTimeLog(
+            ticket_patterns=[Jira.ticket_pattern], log_path="{}/*.txt".format(tmp_path)
+        )
         raw_log = "".join(clockwork.get_raw_log())
         self.assertEqual(raw_log, log_data_1)
 
@@ -712,7 +718,7 @@ class TestClockWork(unittest.TestCase):
         def mock_get_raw_log():
             return ""
 
-        clockwork = ClockWorkTimeLog()
+        clockwork = ClockWorkTimeLog(ticket_patterns=[Jira.ticket_pattern])
         clockwork.get_facts = mock_get_facts
         clockwork.get_raw_log = mock_get_raw_log
         self.assertEqual(

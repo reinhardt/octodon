@@ -24,6 +24,30 @@ class Tracking(object):
         else:
             self.project_history_file = project_history_file
 
+    def get_issue_title(self, issue_id):
+        issue_title = ""
+        for tracker in self.trackers:
+            issue = None
+            try:
+                issue = tracker.get_issue(issue_id)
+            except NotFound as nf:
+                print(
+                    u"Could not find issue {0}: {1} - {2}".format(
+                        str(issue_id), nf.status_code, nf.text
+                    ),
+                    file=sys.stderr,
+                )
+            except (ConnectionError, socket.error):
+                print(
+                    "Could not find issue " + str(issue_id), file=sys.stderr,
+                )
+            if issue is None:
+                continue
+            issue_title = issue.get_title()
+            if issue_title:
+                break
+        return issue_title
+
     def get_booking_target(self, entry):
         harvest_projects = [project[u"code"] for project in self.harvest.projects]
 

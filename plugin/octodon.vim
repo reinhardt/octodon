@@ -102,6 +102,18 @@ def OctodonTimeSum():
 
 def OctodonClock():
     line = vim.current.line
+    current_line_no = vim.current.window.cursor[0] - 1
+    previous_line_no = current_line_no - 1
+
+    if not line.strip() and previous_line_no > 0:
+        previous_line = vim.current.buffer[previous_line_no].strip()
+        previous_task = re.sub("^[0-9]{4}", "", previous_line).strip()
+        print(previous_task)
+        if not previous_task:
+            previous_line = vim.current.buffer[previous_line_no - 1].strip()
+            previous_task = re.sub("^[0-9]{4} ", "", previous_line)
+            line = vim.current.line = previous_task
+
     if not re.match("^[0-9]{4}.*", line):
         now = datetime.now().strftime("%H%M")
         line = f"{now} {line}"
@@ -127,9 +139,6 @@ def OctodonClock():
                 line = line.replace(issue_id, issue_text)
     vim.current.line = line
 
-    current_line_no = vim.current.window.cursor[0] - 1
-    previous_line_no = current_line_no - 1
-    print(vim.current.buffer[previous_line_no].strip())
     if previous_line_no < 0 or not vim.current.buffer[previous_line_no].strip():
         date_line = "{}:".format(datetime.now().strftime("%Y-%m-%d"))
         buffer = vim.current.buffer.range(0, current_line_no)

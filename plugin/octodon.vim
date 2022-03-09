@@ -89,7 +89,7 @@ if _initialize_octodon_env():
     from datetime import datetime
     from octodon.clockwork import ClockWorkTimeLog
     from octodon.cli import get_config
-    from octodon.jira import Jira
+    from octodon.github import Github
     from octodon.utils import format_spent_time
     from octodon.utils import get_time_sum
 
@@ -105,24 +105,22 @@ def OctodonClock():
     if not re.match("^[0-9]{4}.*", line):
         now = datetime.now().strftime("%H%M")
         line = f"{now} {line}"
-    ticket_match = Jira.ticket_pattern.search(line)
+    from octodon.github import Github
+    ticket_match = Github.ticket_pattern.search(line)
     if ticket_match:
         config = get_config()
-        if config.has_section("jira"):
-            from octodon.jira import Jira
-            if config.has_option("jira", "password_command"):
-                cmd = config.get("jira", "password_command")
-                password = (
-                    subprocess.check_output(cmd.split(" ")).strip().decode("utf-8")
-                )
-                config.set("jira", "pass", password)
-            jira = Jira(
-                config.get("jira", "url"),
-                config.get("jira", "user"),
-                config.get("jira", "pass"),
+        if config.has_section("github"):
+            if config.has_option("github", "token_command"):
+                cmd = config.get("github", "token_command")
+                token = subprocess.check_output(cmd.split(" ")).strip().decode("utf-8")
+                config.set("github", "token", token)
+            github = Github(
+                config.get("github", "token"),
+                config.get("github", "organization"),
+                int(config.get("github", "project_num")),
             )
             issue_id = ticket_match[1]
-            issue = jira.get_issue(issue_id)
+            issue = github.get_issue(issue_id)
             summary = issue.get_title()
             issue_text = f"{issue_id}: {summary}"
             if issue_text not in line:

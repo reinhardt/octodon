@@ -40,6 +40,7 @@ setup(
     install_requires=[
         "jira",
         "pyactiveresource",
+        "github3api",
         "pystache",
         "python-harvest-redux",
         "setuptools",

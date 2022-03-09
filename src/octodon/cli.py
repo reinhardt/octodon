@@ -1,4 +1,4 @@
-from __future__ import absolute_import
+# from __future__ import absolute_import
 import os
 import argparse
 import pystache
@@ -33,23 +33,10 @@ class Octodon(Cmd):
             ticket_patterns.append(self.redmine_class.ticket_pattern)
         if self.jira_class:
             ticket_patterns.append(self.jira_class.ticket_pattern)
+        if self.github_class:
+            ticket_patterns.append(self.github_class.ticket_pattern)
 
-        if config.get("main", "source") == "hamster":
-            from octodon.hamster import HamsterTimeLog
-
-            self.time_log = HamsterTimeLog(ticket_patterns=ticket_patterns)
-        elif config.get("main", "source") == "orgmode":
-            from octodon.orgmode import OrgModeTimeLog
-
-            filename = config.get("orgmode", "filename")
-            self.time_log = OrgModeTimeLog(filename, ticket_patterns=ticket_patterns)
-        elif config.get("main", "source") == "plaintext":
-            from octodon.clockwork import ClockWorkTimeLog
-
-            log_path = config.get("plaintext", "log_path")
-            self.time_log = ClockWorkTimeLog(
-                ticket_patterns=ticket_patterns, log_path=log_path
-            )
+        self.time_log = get_time_log(config, ticket_patterns)
 
         self.editor = config.get("main", "editor")
 
@@ -140,6 +127,15 @@ class Octodon(Cmd):
             return None
 
     @property
+    def github_class(self):
+        if self.config.has_section("github"):
+            from octodon.github import Github
+
+            return Github
+        else:
+            return None
+
+    @property
     def jira(self):
         jira = getattr(self, "_jira", None)
         if jira is None and self.jira_class is not None:
@@ -155,6 +151,21 @@ class Octodon(Cmd):
                 self.config.get("jira", "pass"),
             )
         return jira
+
+    @property
+    def github(self):
+        github = getattr(self, "_github", None)
+        if github is None and self.github_class is not None:
+            if self.config.has_option("github", "token_command"):
+                cmd = self.config.get("github", "token_command")
+                token = subprocess.check_output(cmd.split(" ")).strip().decode("utf-8")
+                self.config.set("github", "token", token)
+            self._github = github = self.github_class(
+                self.config.get("github", "token"),
+                self.config.get("github", "organization"),
+                int(self.config.get("github", "project_num")),
+            )
+        return github
 
     @property
     def redmine(self):
@@ -217,7 +228,10 @@ class Octodon(Cmd):
         tracking = getattr(self, "_tracking", None)
         if tracking is None:
             self._tracking = tracking = Tracking(
-                redmine=self.redmine, jira=self.jira, harvest=self.harvest,
+                redmine=self.redmine,
+                jira=self.jira,
+                harvest=self.harvest,
+                github=self.github,
             )
         return tracking
 
@@ -317,7 +331,7 @@ class Octodon(Cmd):
         print(format_spent_time(get_time_sum(bookings)))
 
     def do_list(self, arg):
-        """ Print the current bookings or save them to a file.
+        """Print the current bookings or save them to a file.
         Subcommands: show \tsave
         """
         args = filter(None, arg.split(" "))
@@ -349,7 +363,8 @@ class Octodon(Cmd):
                     print(self.get_simple_list(self.bookings), file=outfile)
         except FileNotFoundError as fnfe:
             print(
-                "Could not open {0}: {1}".format(filename, fnfe), file=sys.stderr,
+                "Could not open {0}: {1}".format(filename, fnfe),
+                file=sys.stderr,
             )
             return
 
@@ -436,6 +451,10 @@ class Octodon(Cmd):
             self.do_jira()
         self.do_harvest()
 
+    def do_flush(self, *args):
+        """ Executes summary, book, list save in this order """
+        self.cmdqueue.extend(["summary", "book", "list save"])
+
     def do_fetch(self, *args):
         """ EXPERIMENTAL. Freshly fetch bookings from source. """
         old_bookings = self.bookings[:]
@@ -481,6 +500,25 @@ def get_config(cfgfile=None):
         config.set("main", "editor", editor)
 
     return config
+
+
+def get_time_log(config, ticket_patterns=[]):
+    time_log = None
+    if config.get("main", "source") == "hamster":
+        from octodon.hamster import HamsterTimeLog
+
+        time_log = HamsterTimeLog(ticket_patterns=ticket_patterns)
+    elif config.get("main", "source") == "orgmode":
+        from octodon.orgmode import OrgModeTimeLog
+
+        filename = config.get("orgmode", "filename")
+        time_log = OrgModeTimeLog(filename, ticket_patterns=ticket_patterns)
+    elif config.get("main", "source") == "plaintext":
+        from octodon.clockwork import ClockWorkTimeLog
+
+        log_path = config.get("plaintext", "log_path")
+        time_log = ClockWorkTimeLog(ticket_patterns=ticket_patterns, log_path=log_path)
+    return time_log
 
 
 def main():
@@ -539,11 +577,15 @@ def main():
         else:
             raise Exception("unrecognized date format: {0}".format(args.date))
 
-    if args.command and args.command != "shell":
+    if args.command == "total":
+        time_log = get_time_log(config)
+        bookings = time_log.get_timeinfo(date=spent_on)
+        print(format_spent_time(get_time_sum(bookings)))
+    elif args.command and args.command != "shell":
         octodon = Octodon(config, spent_on, new_session=True)
         octodon.onecmd(args.command)
     else:
         octodon = Octodon(config, spent_on, new_session=args.new_session)
         if args.command != "shell":
-            octodon.cmdqueue.extend(["edit", "summary", "book", "list save"])
+            octodon.cmdqueue.extend(["edit"])
         octodon.cmdloop()

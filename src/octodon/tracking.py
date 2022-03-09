@@ -9,12 +9,18 @@ from octodon.utils import get_data_home
 
 class Tracking(object):
     def __init__(
-        self, redmine=None, jira=None, harvest=None, project_history_file=None,
+        self,
+        redmine=None,
+        jira=None,
+        harvest=None,
+        github=None,
+        project_history_file=None,
     ):
         self.redmine = redmine
         self.jira = jira
         self.harvest = harvest
-        self.trackers = list(filter(None, [self.jira, self.redmine]))
+        self.github = github
+        self.trackers = list(filter(None, [self.jira, self.redmine, self.github]))
         self._projects = []
         self._issue_to_project = {}
         if project_history_file is None:
@@ -39,7 +45,8 @@ class Tracking(object):
                 )
             except (ConnectionError, socket.error):
                 print(
-                    "Could not find issue " + str(issue_id), file=sys.stderr,
+                    "Could not find issue " + str(issue_id),
+                    file=sys.stderr,
                 )
             if issue is None:
                 continue

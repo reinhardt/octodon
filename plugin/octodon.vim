@@ -134,7 +134,7 @@ def OctodonClock():
             issue_id = ticket_match[1]
             issue = github.get_issue(issue_id)
             summary = issue.get_title()
-            issue_text = f"{issue_id}: {summary}"
+            issue_text = f"{summary} {issue_id}"
             if issue_text not in line:
                 line = line.replace(issue_id, issue_text)
     vim.current.line = line

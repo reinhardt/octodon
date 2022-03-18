@@ -10,17 +10,12 @@ from octodon.utils import get_data_home
 class Tracking(object):
     def __init__(
         self,
-        redmine=None,
-        jira=None,
+        trackers=[],
         harvest=None,
-        github=None,
         project_history_file=None,
     ):
-        self.redmine = redmine
-        self.jira = jira
         self.harvest = harvest
-        self.github = github
-        self.trackers = list(filter(None, [self.jira, self.redmine, self.github]))
+        self.trackers = trackers
         self._projects = []
         self._issue_to_project = {}
         if project_history_file is None:

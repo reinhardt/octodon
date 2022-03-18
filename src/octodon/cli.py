@@ -29,12 +29,12 @@ class Octodon(Cmd):
         self.config = config
 
         ticket_patterns = []
-        if self.redmine_class:
-            ticket_patterns.append(self.redmine_class.ticket_pattern)
-        if self.jira_class:
-            ticket_patterns.append(self.jira_class.ticket_pattern)
-        if self.github_class:
-            ticket_patterns.append(self.github_class.ticket_pattern)
+        if self.redmine:
+            ticket_patterns.append(self.redmine.ticket_pattern)
+        if self.jira:
+            ticket_patterns.append(self.jira.ticket_pattern)
+        if self.github:
+            ticket_patterns.append(self.github.ticket_pattern)
 
         self.time_log = get_time_log(config, ticket_patterns)
 
@@ -100,52 +100,21 @@ class Octodon(Cmd):
         self.spent_on = spent_on
 
     @property
-    def jira_class(self):
-        if self.config.has_section("jira"):
-            from octodon.jira import Jira
-
-            return Jira
-        else:
-            return None
-
-    @property
-    def redmine_class(self):
-        if self.config.has_section("redmine"):
-            from octodon.redmine import Redmine
-
-            return Redmine
-        else:
-            return None
-
-    @property
-    def harvest_class(self):
-        if self.config.has_section("harvest"):
-            from octodon.harvest import Harvest
-
-            return Harvest
-        else:
-            return None
-
-    @property
-    def github_class(self):
-        if self.config.has_section("github"):
-            from octodon.github import Github
-
-            return Github
-        else:
-            return None
-
-    @property
     def jira(self):
         jira = getattr(self, "_jira", None)
-        if jira is None and self.jira_class is not None:
+        if jira is None and self.config.has_section("jira"):
+            try:
+                from octodon.jira import Jira
+            except ImportError:
+                return None
+
             if self.config.has_option("jira", "password_command"):
                 cmd = self.config.get("jira", "password_command")
                 password = (
                     subprocess.check_output(cmd.split(" ")).strip().decode("utf-8")
                 )
                 self.config.set("jira", "pass", password)
-            self._jira = jira = self.jira_class(
+            self._jira = jira = Jira(
                 self.config.get("jira", "url"),
                 self.config.get("jira", "user"),
                 self.config.get("jira", "pass"),
@@ -155,12 +124,17 @@ class Octodon(Cmd):
     @property
     def github(self):
         github = getattr(self, "_github", None)
-        if github is None and self.github_class is not None:
+        if github is None and self.config.has_section("github"):
+            try:
+                from octodon.github import Github
+            except ImportError:
+                return None
+
             if self.config.has_option("github", "token_command"):
                 cmd = self.config.get("github", "token_command")
                 token = subprocess.check_output(cmd.split(" ")).strip().decode("utf-8")
                 self.config.set("github", "token", token)
-            self._github = github = self.github_class(
+            self._github = github = Github(
                 self.config.get("github", "token"),
                 self.config.get("github", "organization"),
                 int(self.config.get("github", "project_num")),
@@ -170,24 +144,34 @@ class Octodon(Cmd):
     @property
     def redmine(self):
         redmine = getattr(self, "_redmine", None)
-        if redmine is None and self.redmine_class is not None:
-            if config.has_option("redmine", "password_command"):
-                cmd = config.get("redmine", "password_command")
+        if redmine is None and self.config.has_section("redmine"):
+            try:
+                from octodon.redmine import Redmine
+            except ImportError:
+                return None
+
+            if self.config.has_option("redmine", "password_command"):
+                cmd = self.config.get("redmine", "password_command")
                 password = (
                     subprocess.check_output(cmd.split(" ")).strip().decode("utf-8")
                 )
-                config.set("redmine", "pass", password)
-            self._redmine = redmine = self.redmine_class(
-                config.get("redmine", "url"),
-                config.get("redmine", "user"),
-                config.get("redmine", "pass"),
+                self.config.set("redmine", "pass", password)
+            self._redmine = redmine = Redmine(
+                self.config.get("redmine", "url"),
+                self.config.get("redmine", "user"),
+                self.config.get("redmine", "pass"),
             )
         return redmine
 
     @property
     def harvest(self):
         harvest = getattr(self, "_harvest", None)
-        if harvest is None and self.harvest_class is not None:
+        if harvest is None and self.config.has_section("harvest"):
+            try:
+                from octodon.harvest import Harvest
+            except ImportError:
+                return None
+
             if self.config.has_option("harvest", "password_command"):
                 cmd = self.config.get("harvest", "password_command")
                 password = (
@@ -213,7 +197,7 @@ class Octodon(Cmd):
             else:
                 task_mapping = {}
 
-            self._harvest = harvest = self.harvest_class(
+            self._harvest = harvest = Harvest(
                 self.config.get("harvest", "url"),
                 self.config.get("harvest", "user"),
                 self.config.get("harvest", "pass"),
@@ -228,10 +212,8 @@ class Octodon(Cmd):
         tracking = getattr(self, "_tracking", None)
         if tracking is None:
             self._tracking = tracking = Tracking(
-                redmine=self.redmine,
-                jira=self.jira,
+                trackers=list(filter(None, [self.jira, self.redmine, self.github])),
                 harvest=self.harvest,
-                github=self.github,
             )
         return tracking
 

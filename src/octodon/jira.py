@@ -1,4 +1,4 @@
-from __future__ import absolute_import
+#from __future__ import absolute_import
 from datetime import datetime
 from jira import JIRA
 from jira import JIRAError
@@ -34,7 +34,16 @@ class Jira(object):
     ticket_pattern = re.compile("#?([A-Z]+-[0-9]+)")
 
     def __init__(self, url, user, password):
-        self.jira = JIRA(url, auth=(user, password))
+        self.url = url
+        self.user = user
+        self.password = password
+
+    @property
+    def jira(self):
+        conn = getattr(self, "_connection", None)
+        if conn is None:
+            self._connection = conn = JIRA(self.url, auth=(self.user, self.password))
+        return conn
 
     def get_issue(self, issue_id):
         if not self.ticket_pattern.match(issue_id):

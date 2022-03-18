@@ -154,7 +154,9 @@ class TestOctodon(unittest.TestCase):
                 "issue_title": "ReST API",
             }
         ]
-        Tracking(redmine=MockRedmine(), harvest=harvest, project_history_file=CACHEFILE)
+        Tracking(
+            trackers=[MockRedmine()], harvest=harvest, project_history_file=CACHEFILE
+        )
         harvest.book_time(bookings)
         self.assertEqual(len(harvest.entries), 1)
         self.assertEqual(harvest.entries[0]["task_id"], 3982288)
@@ -169,8 +171,7 @@ class TestOctodon(unittest.TestCase):
             default_task="Development",
         )
         tracking = Tracking(
-            redmine=MockRedmine(),
-            jira=MockJira(),
+            trackers=[MockRedmine(), MockJira()],
             harvest=harvest,
             project_history_file=CACHEFILE,
         )
@@ -220,12 +221,12 @@ class TestOctodon(unittest.TestCase):
         if os.path.exists(CACHEFILE):
             os.remove(CACHEFILE)
         tracking = Tracking(
-            redmine=MockRedmine(), harvest=harvest, project_history_file=CACHEFILE
+            trackers=[MockRedmine()], harvest=harvest, project_history_file=CACHEFILE
         )
         harvest.book_time(bookings)
 
         tracking = Tracking(
-            redmine=MockRedmine(), harvest=harvest, project_history_file=CACHEFILE
+            trackers=[MockRedmine()], harvest=harvest, project_history_file=CACHEFILE
         )
         project, task = tracking.get_booking_target(
             self._make_booking("10763", description=u"Fixed encoding")

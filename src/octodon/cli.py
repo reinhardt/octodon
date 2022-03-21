@@ -83,6 +83,7 @@ class Octodon(Cmd):
                     "author": author,
                     "repos": repos,
                     "exe": exe,
+                    "patterns": ticket_patterns,
                 }
             )
 
@@ -264,7 +265,9 @@ class Octodon(Cmd):
     def _get_bookings(self, spent_on):
         loginfo = {}
         for vcs_config in self.vcs_list:
-            vcslog = vcs_config["class"](exe=vcs_config["exe"])
+            vcslog = vcs_config["class"](
+                exe=vcs_config["exe"], patterns=vcs_config["patterns"]
+            )
             try:
                 loginfo = vcslog.get_loginfo(
                     date=spent_on,

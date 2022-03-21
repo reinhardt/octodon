@@ -4,21 +4,25 @@ import subprocess
 import sys
 from datetime import datetime, timedelta
 
-ref_pattern = re.compile("(?:    )?(.*)[# ]([A-Z0-9]+-[0-9]+)")
 ref_keyword_pattern = re.compile("([Rr]efs? ?|[Ff]ixes ?)$")
 
 
 class VCSLog(object):
-    def __init__(self, exe=None):
+    def __init__(self, exe=None, patterns=[]):
         self.exe = exe
+        self.patterns = patterns
 
     def extract_loginfo(self, log, mergewith={}):
-        matches = ref_pattern.finditer(log) or []
-        logdict = mergewith
-        for match in matches:
-            comment = ref_keyword_pattern.sub("", match.group(1))
-            comment = comment.strip(" ,").strip(" .")
-            logdict.setdefault(match.group(2), []).append(comment)
+        logdict = {}
+        logdict.update(mergewith)
+        for entry in log:
+            for ref_pattern in self.patterns:
+                matches = ref_pattern.finditer(entry) or []
+                for match in matches:
+                    comment = ref_pattern.sub("", entry)
+                    comment = ref_keyword_pattern.sub("", comment)
+                    comment = comment.strip("\n").strip(" ,").strip(" .")
+                    logdict.setdefault(match.group(1), []).append(comment)
         return logdict
 
     def _get_loginfo(self, command, args, repos=[], mergewith={}):
@@ -40,15 +44,9 @@ class VCSLog(object):
                 )
                 continue
             out = out.decode("utf-8")
-            log = "\n".join(
-                [
-                    re.sub(r"^([A-Za-z]*:\s*.*\n)*", "", entry)
-                    .replace("\n    ", " ")
-                    .strip()
-                    for entry in re.split(r"^commit [a-z0-9]*\n", out)
-                    if entry
-                ]
-            )
+            log = [
+                entry.replace("\n", " ").strip() for entry in out.split("\n\n") if entry
+            ]
             logdict = self.extract_loginfo(log, logdict)
         return logdict
 
@@ -57,8 +55,9 @@ class VCSLog(object):
 
 
 class SvnLog(VCSLog):
-    def __init__(self, exe="/usr/bin/svn"):
+    def __init__(self, exe="/usr/bin/svn", patterns=[]):
         self.exe = exe
+        self.patterns = patterns
 
     def get_loginfo(self, date=datetime.now(), author=None, repos=[], mergewith={}):
         command = [self.exe, "log"]
@@ -71,8 +70,9 @@ class SvnLog(VCSLog):
 
 
 class GitLog(VCSLog):
-    def __init__(self, exe="/usr/bin/git"):
+    def __init__(self, exe="/usr/bin/git", patterns=[]):
         self.exe = exe
+        self.patterns = patterns
 
     def get_loginfo(self, date=datetime.now(), author=None, repos=[], mergewith={}):
         command = [
@@ -83,6 +83,7 @@ class GitLog(VCSLog):
             "log",
             "--branches",
             "--reverse",
+            "--pretty=%B",
         ]
         args = ['--since="{%s}"' % date, '--until="{%s}"' % (date + timedelta(1))]
         if author:

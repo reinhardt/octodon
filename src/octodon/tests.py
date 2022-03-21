@@ -1,4 +1,5 @@
 import os
+import re
 import unittest
 from datetime import date
 from datetime import datetime
@@ -384,18 +385,8 @@ class TestOctodon(unittest.TestCase):
 
 class TestVCSLog(unittest.TestCase):
     def test_one_ticket(self):
-        vcslog = VCSLog()
-        log = """
-commit 4aa68f1777a82605e8bd7acdb28342bfa23daea9
-Author: Manuel Reinhardt <reinhardt@syslab.com>
-Date:   Thu Apr 15 15:58:22 2020 +0200
- Fix permissions
-
-commit d5031fdb0025ce79d8336c20df4be960417cdc2f
-Author: Manuel Reinhardt <reinhardt@syslab.com>
-Date:   Thu Apr 15 16:14:48 2020 +0200
- Extended creation script. Refs DMY-312
-        """
+        vcslog = VCSLog(patterns=[re.compile("#?([A-Z]+-[0-9]+)")])
+        log = ["Fix permissions\n", "Extended creation script. Refs DMY-312\n"]
         self.assertEqual(
             vcslog.extract_loginfo(log), {"DMY-312": ["Extended creation script"]}
         )

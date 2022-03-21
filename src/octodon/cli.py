@@ -29,12 +29,8 @@ class Octodon(Cmd):
         self.config = config
 
         ticket_patterns = []
-        if self.redmine:
-            ticket_patterns.append(self.redmine.ticket_pattern)
-        if self.jira:
-            ticket_patterns.append(self.jira.ticket_pattern)
-        if self.github:
-            ticket_patterns.append(self.github.ticket_pattern)
+        for tracker in self.trackers:
+            ticket_patterns.append(tracker.ticket_pattern)
 
         self.time_log = get_time_log(config, ticket_patterns)
 
@@ -56,37 +52,6 @@ class Octodon(Cmd):
         if config.has_option("main", "list-file"):
             self.list_file_name = os.path.expanduser(config.get("main", "list-file"))
 
-        vcs_class = {"git": GitLog, "svn": SvnLog}
-
-        self.vcs_list = []
-        for vcs in self.config.get("main", "vcs").split("\n"):
-            if not vcs:
-                continue
-            if not self.config.has_section(vcs):
-                continue
-            author = None
-            repos = []
-            if self.config.has_option(vcs, "author"):
-                author = self.config.get(vcs, "author")
-            if self.config.has_option(vcs, "repos"):
-                repos = [
-                    r for r in self.config.get(vcs, "repos").split("\n") if r.strip()
-                ]
-            if self.config.has_option(vcs, "executable"):
-                exe = self.config.get(vcs, "executable")
-            else:
-                exe = "/usr/bin/env " + vcs
-            self.vcs_list.append(
-                {
-                    "name": vcs,
-                    "class": vcs_class.get(vcs, VCSLog),
-                    "author": author,
-                    "repos": repos,
-                    "exe": exe,
-                    "patterns": ticket_patterns,
-                }
-            )
-
         self.prompt = "octodon> "
         self.sessionfile = os.path.join(get_data_home(), "octodon_session_timelog.rst")
         self.is_new_session = True
@@ -99,6 +64,48 @@ class Octodon(Cmd):
                     answer = input(prompt)
                 self.is_new_session = answer.lower() == "n"
         self.spent_on = spent_on
+
+    @property
+    def vcs_list(self):
+        vcs_list = getattr(self, "_vcs_list", None)
+        if vcs_list is None:
+            vcs_list = []
+            vcs_class = {"git": GitLog, "svn": SvnLog}
+            ticket_patterns = []
+            for tracker in self.trackers:
+                ticket_patterns.append(tracker.ticket_pattern)
+
+            for vcs in self.config.get("main", "vcs").split("\n"):
+                if not vcs:
+                    continue
+                if not self.config.has_section(vcs):
+                    continue
+                author = None
+                repos = []
+                if self.config.has_option(vcs, "author"):
+                    author = self.config.get(vcs, "author")
+                if self.config.has_option(vcs, "repos"):
+                    repos = [
+                        r
+                        for r in self.config.get(vcs, "repos").split("\n")
+                        if r.strip()
+                    ]
+                if self.config.has_option(vcs, "executable"):
+                    exe = self.config.get(vcs, "executable")
+                else:
+                    exe = "/usr/bin/env " + vcs
+                if vcs in vcs_class:
+                    vcs_list.append(
+                        vcs_class.get(vcs)(
+                            exe=exe,
+                            author=author,
+                            repos=repos,
+                            patterns=ticket_patterns,
+                        )
+                    )
+                else:
+                    print("Unrecognized vcs: %s" % vcs, file=sys.stderr)
+        return vcs_list
 
     @property
     def jira(self):
@@ -165,6 +172,15 @@ class Octodon(Cmd):
         return redmine
 
     @property
+    def trackers(self):
+        trackers = getattr(self, "_trackers", None)
+        if trackers is None:
+            self._trackers = trackers = list(
+                filter(None, [self.jira, self.redmine, self.github])
+            )
+        return trackers or []
+
+    @property
     def harvest(self):
         harvest = getattr(self, "_harvest", None)
         if harvest is None and self.config.has_section("harvest"):
@@ -213,7 +229,7 @@ class Octodon(Cmd):
         tracking = getattr(self, "_tracking", None)
         if tracking is None:
             self._tracking = tracking = Tracking(
-                trackers=list(filter(None, [self.jira, self.redmine, self.github])),
+                trackers=self.trackers,
                 harvest=self.harvest,
             )
         return tracking
@@ -264,19 +280,11 @@ class Octodon(Cmd):
 
     def _get_bookings(self, spent_on):
         loginfo = {}
-        for vcs_config in self.vcs_list:
-            vcslog = vcs_config["class"](
-                exe=vcs_config["exe"], patterns=vcs_config["patterns"]
+        for vcs in self.vcs_list:
+            loginfo = vcs.get_loginfo(
+                date=spent_on,
+                mergewith=loginfo,
             )
-            try:
-                loginfo = vcslog.get_loginfo(
-                    date=spent_on,
-                    author=vcs_config["author"],
-                    repos=vcs_config["repos"],
-                    mergewith=loginfo,
-                )
-            except NotImplemented:
-                print("Unrecognized vcs: %s" % vcs_config["name"], file=sys.stderr)
 
         bookings = self.time_log.get_timeinfo(
             date=spent_on, loginfo=loginfo, activities=self.activities

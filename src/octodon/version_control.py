@@ -25,9 +25,9 @@ class VCSLog(object):
                     logdict.setdefault(match.group(1), []).append(comment)
         return logdict
 
-    def _get_loginfo(self, command, args, repos=[], mergewith={}):
+    def _get_loginfo(self, command, args, mergewith={}):
         logdict = mergewith
-        for repo in repos:
+        for repo in self.repos:
             if not os.path.exists(repo):
                 print(
                     "Warning: Repository path not found: {0}".format(repo),
@@ -50,31 +50,33 @@ class VCSLog(object):
             logdict = self.extract_loginfo(log, logdict)
         return logdict
 
-    def get_loginfo(self, date=datetime.now(), author=None, repos=[], mergewith={}):
+    def get_loginfo(self, date=datetime.now(), mergewith={}):
         raise NotImplemented
 
 
 class SvnLog(VCSLog):
-    def __init__(self, exe="/usr/bin/svn", patterns=[]):
+    def __init__(self, exe="/usr/bin/svn", author=None, repos=[], patterns=[]):
         self.exe = exe
+        self.author = author
+        self.repos = repos
         self.patterns = patterns
 
-    def get_loginfo(self, date=datetime.now(), author=None, repos=[], mergewith={}):
+    def get_loginfo(self, date=datetime.now(), mergewith={}):
         command = [self.exe, "log"]
         args = ['-r "{%s}:{%s}"' % (date, date + timedelta(1))]
-        if author:
-            args.append('--search="%s"' % author)
-        return self._get_loginfo(
-            command=command, args=args, repos=repos, mergewith=mergewith
-        )
+        if self.author:
+            args.append('--search="%s"' % self.author)
+        return self._get_loginfo(command=command, args=args, mergewith=mergewith)
 
 
 class GitLog(VCSLog):
-    def __init__(self, exe="/usr/bin/git", patterns=[]):
+    def __init__(self, exe="/usr/bin/git", author=None, repos=[], patterns=[]):
         self.exe = exe
+        self.author = author
+        self.repos = repos
         self.patterns = patterns
 
-    def get_loginfo(self, date=datetime.now(), author=None, repos=[], mergewith={}):
+    def get_loginfo(self, date=datetime.now(), mergewith={}):
         command = [
             self.exe,
             "--no-pager",
@@ -86,8 +88,6 @@ class GitLog(VCSLog):
             "--pretty=%B",
         ]
         args = ['--since="{%s}"' % date, '--until="{%s}"' % (date + timedelta(1))]
-        if author:
-            args.append('--author="%s"' % author)
-        return self._get_loginfo(
-            command=command, args=args, repos=repos, mergewith=mergewith
-        )
+        if self.author:
+            args.append('--author="%s"' % self.author)
+        return self._get_loginfo(command=command, args=args, mergewith=mergewith)

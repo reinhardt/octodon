@@ -114,7 +114,7 @@ def OctodonClock():
             previous_task = re.sub("^[0-9]{4} ", "", previous_line)
             line = vim.current.line = previous_task
 
-    if not re.match("^[0-9]{4}.*", line):
+    if not re.match("^[0-9]{4} .*", line):
         now = datetime.now().strftime("%H%M")
         line = f"{now} {line}"
     from octodon.github import Github

@@ -497,6 +497,8 @@ def get_config(cfgfile=None):
 
 def get_time_log(config, ticket_patterns=[]):
     time_log = None
+    if not config.has_option("main", "source"):
+        return None
     if config.get("main", "source") == "hamster":
         from octodon.hamster import HamsterTimeLog
 
@@ -572,7 +574,9 @@ def main():
 
     if args.command == "total":
         time_log = get_time_log(config)
-        bookings = time_log.get_timeinfo(date=spent_on)
+        bookings = ()
+        if time_log:
+            bookings = time_log.get_timeinfo(date=spent_on)
         print(format_spent_time(get_time_sum(bookings)))
     elif args.command and args.command != "shell":
         octodon = Octodon(config, spent_on, new_session=True)

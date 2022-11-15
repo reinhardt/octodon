@@ -85,9 +85,14 @@ class GitLog(VCSLog):
             "log",
             "--branches",
             "--reverse",
-            "--pretty=%B",
+            "--pretty=%h",
         ]
         args = ['--since="{%s}"' % date, '--until="{%s}"' % (date + timedelta(1))]
         if self.author:
             args.append('--author="%s"' % self.author)
-        return self._get_loginfo(command=command, args=args, mergewith=mergewith)
+        command = command + args + (
+            "| while read sha1; do "
+            "git show -s --format='%B' $sha1 | tr -d '\n'; echo; "
+            "done".split(" ")
+        )
+        return self._get_loginfo(command=command, args=[], mergewith=mergewith)

@@ -1,10 +1,13 @@
+from datetime import datetime
+from datetime import timedelta
+from functools import reduce
+from tempfile import NamedTemporaryFile
+
 import math
 import os
 import re
 import sys
-from datetime import datetime, timedelta
-from functools import reduce
-from tempfile import NamedTemporaryFile
+
 
 ticket_pattern = re.compile("#([A-Z0-9-]+)")
 
@@ -86,7 +89,7 @@ def write_to_file(bookings, spent_on, activities, file_name=None):
     summary_time = min(datetime.now(), (spent_on + timedelta(1) - timedelta(0, 1)))
     tmpfile.write("#+BEGIN: clocktable :maxlevel 2 :scope file\n")
     tmpfile.write(
-        "Clock summary at [" + summary_time.strftime("%Y-%m-%d %a %H:%M") + u"]\n"
+        "Clock summary at [" + summary_time.strftime("%Y-%m-%d %a %H:%M") + "]\n"
     )
     tmpfile.write("\n")
 
@@ -156,7 +159,7 @@ def clean_up_bookings(bookings):
     removed_bookings = []
     for booking in bookings[:]:
         if booking["issue_id"] is None and not booking["tags"]:
-            if booking["category"] == u"Work":
+            if booking["category"] == "Work":
                 removed_time += booking["time"]
                 removed_bookings.append(booking)
                 bookings.remove(booking)
@@ -193,7 +196,7 @@ def clean_up_bookings(bookings):
             )
 
     for booking in bookings:
-        if booking["category"] == u"Work":
+        if booking["category"] == "Work":
             booking["time"] += removed_time * booking["time"] / sum_time
     return bookings
 

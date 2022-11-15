@@ -1,11 +1,12 @@
-#from __future__ import absolute_import
+# from __future__ import absolute_import
 from datetime import datetime
 from jira import JIRA
 from jira import JIRAError
-from octodon.issue import Issue
 
 # from octodon.exceptions import ConnectionError
 from octodon.exceptions import NotFound
+from octodon.issue import Issue
+
 import re
 import sys
 
@@ -76,7 +77,7 @@ class Jira(object):
                 )
             except JIRAError as je:
                 print(
-                    u"{0}: {1} ({2})".format(
+                    "{0}: {1} ({2})".format(
                         je.status_code, je.text, rm_entry["comments"]
                     ),
                     file=sys.stderr,

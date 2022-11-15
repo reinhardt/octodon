@@ -1,18 +1,13 @@
 # from __future__ import absolute_import
-import os
-import argparse
-import pystache
-import re
-import subprocess
-import sys
-from contextlib import contextmanager
 from cmd import Cmd
-from datetime import datetime, timedelta
+from contextlib import contextmanager
+from datetime import datetime
+from datetime import timedelta
 from octodon.tracking import Tracking
 from octodon.utils import clean_up_bookings
 from octodon.utils import format_spent_time
-from octodon.utils import get_time_sum
 from octodon.utils import get_data_home
+from octodon.utils import get_time_sum
 from octodon.utils import make_row
 from octodon.utils import make_table
 from octodon.utils import read_from_file
@@ -21,6 +16,13 @@ from octodon.version_control import GitLog
 from octodon.version_control import SvnLog
 from octodon.version_control import VCSLog
 from six.moves.configparser import ConfigParser
+
+import argparse
+import os
+import pystache
+import re
+import subprocess
+import sys
 
 
 class Octodon(Cmd):
@@ -191,9 +193,7 @@ class Octodon(Cmd):
 
             if self.config.has_option("harvest", "token_command"):
                 cmd = self.config.get("harvest", "token_command")
-                token = (
-                    subprocess.check_output(cmd.split(" ")).strip().decode("utf-8")
-                )
+                token = subprocess.check_output(cmd.split(" ")).strip().decode("utf-8")
                 self.config.set("harvest", "personal_token", token)
 
             if self.config.has_option("main", "project-mapping"):
@@ -394,7 +394,7 @@ class Octodon(Cmd):
         return renderer.render(self.list_template, {"bookings": self.bookings})
 
     def do_edit(self, *args):
-        """ Edit the current time booking values in an editor. """
+        """Edit the current time booking values in an editor."""
         self.sessionfile = write_to_file(
             self.bookings, self.spent_on, self.activities, file_name=self.sessionfile
         )
@@ -406,7 +406,7 @@ class Octodon(Cmd):
             self.cmdqueue.clear()
 
     def do_redmine(self, *args):
-        """ Write current bookings to redmine. """
+        """Write current bookings to redmine."""
         try:
             self.redmine.book_time(self.bookings)
         except Exception as e:
@@ -417,7 +417,7 @@ class Octodon(Cmd):
             )
 
     def do_jira(self, *args):
-        """ Write current bookings to jira. """
+        """Write current bookings to jira."""
         try:
             self.jira.book_time(self.bookings)
         except Exception as e:
@@ -427,7 +427,7 @@ class Octodon(Cmd):
             )
 
     def do_harvest(self, *args):
-        """ Write current bookings to harvest. """
+        """Write current bookings to harvest."""
         try:
             self.harvest.book_time(self.bookings)
         except Exception as e:
@@ -437,7 +437,7 @@ class Octodon(Cmd):
             )
 
     def do_book(self, *args):
-        """ Write current bookings to all configured targets. """
+        """Write current bookings to all configured targets."""
         if self.redmine:
             self.do_redmine()
         if self.jira:
@@ -445,11 +445,11 @@ class Octodon(Cmd):
         self.do_harvest()
 
     def do_flush(self, *args):
-        """ Executes summary, book, list save in this order """
+        """Executes summary, book, list save in this order"""
         self.cmdqueue.extend(["summary", "book", "list save"])
 
     def do_fetch(self, *args):
-        """ EXPERIMENTAL. Freshly fetch bookings from source. """
+        """EXPERIMENTAL. Freshly fetch bookings from source."""
         old_bookings = self.bookings[:]
         self.spent_on, bookings = self.get_bookings(self.spent_on)
         bookings = clean_up_bookings(bookings)

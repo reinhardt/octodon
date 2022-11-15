@@ -1,8 +1,11 @@
+from datetime import datetime
+from datetime import timedelta
+
 import os
 import re
 import subprocess
 import sys
-from datetime import datetime, timedelta
+
 
 ref_keyword_pattern = re.compile("([Rr]efs? ?|[Ff]ixes ?)$")
 
@@ -90,9 +93,13 @@ class GitLog(VCSLog):
         args = ['--since="{%s}"' % date, '--until="{%s}"' % (date + timedelta(1))]
         if self.author:
             args.append('--author="%s"' % self.author)
-        command = command + args + (
-            "| while read sha1; do "
-            "git show -s --format='%B' $sha1 | tr -d '\n'; echo; "
-            "done".split(" ")
+        command = (
+            command
+            + args
+            + (
+                "| while read sha1; do "
+                "git show -s --format='%B' $sha1 | tr -d '\n'; echo; "
+                "done".split(" ")
+            )
         )
         return self._get_loginfo(command=command, args=[], mergewith=mergewith)

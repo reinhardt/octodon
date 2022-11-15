@@ -1,10 +1,11 @@
-import re
-import sys
 from octodon.exceptions import NotFound
 from octodon.issue import Issue
 from octodon.utils import get_default_activity
-from pyactiveresource.activeresource import ActiveResource
 from pyactiveresource import connection
+from pyactiveresource.activeresource import ActiveResource
+
+import re
+import sys
 
 
 class RedmineIssue(Issue):
@@ -97,8 +98,8 @@ class Redmine(object):
             if not success:
                 for field, msgs in rm_time_entry.errors.errors.items():
                     print(
-                        u"{0}: {1} ({2})".format(
-                            field, u",".join(msgs), rm_entry["comments"]
+                        "{0}: {1} ({2})".format(
+                            field, ",".join(msgs), rm_entry["comments"]
                         ),
                         file=sys.stderr,
                     )

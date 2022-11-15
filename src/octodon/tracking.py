@@ -1,10 +1,10 @@
-import os
-import socket
-import sys
-
 # from octodon.exceptions import ConnectionError
 from octodon.exceptions import NotFound
 from octodon.utils import get_data_home
+
+import os
+import socket
+import sys
 
 
 class Tracking(object):
@@ -33,7 +33,7 @@ class Tracking(object):
                 issue = tracker.get_issue(issue_id)
             except NotFound as nf:
                 print(
-                    u"Could not find issue {0}: {1} - {2}".format(
+                    "Could not find issue {0}: {1} - {2}".format(
                         str(issue_id), nf.status_code, nf.text
                     ),
                     file=sys.stderr,
@@ -51,7 +51,7 @@ class Tracking(object):
         return issue_title
 
     def get_booking_target(self, entry):
-        harvest_projects = [project[u"code"] for project in self.harvest.projects]
+        harvest_projects = [project["code"] for project in self.harvest.projects]
 
         issue_no = entry["issue_id"]
         issue = None
@@ -63,7 +63,7 @@ class Tracking(object):
                     issue = tracker.get_issue(issue_no)
                 except NotFound as nf:
                     print(
-                        u"Could not find issue {0}: {1} - {2}".format(
+                        "Could not find issue {0}: {1} - {2}".format(
                             str(issue_no), nf.status_code, nf.text
                         ),
                         file=sys.stderr,

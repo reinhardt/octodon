@@ -1,10 +1,10 @@
-import os
-import pickle
-import sys
-
 from harvest import Harvest as HarvestConnection
 from octodon.exceptions import NotFound
 from octodon.utils import get_data_home
+
+import os
+import pickle
+import sys
 
 
 class Harvest(object):

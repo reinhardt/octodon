@@ -1,9 +1,10 @@
-import os
-import re
-import sys
 from datetime import datetime
 from datetime import timedelta
 from glob import glob
+
+import os
+import re
+import sys
 
 
 class ClockWorkTimeLog(object):

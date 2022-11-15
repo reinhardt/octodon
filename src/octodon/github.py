@@ -40,25 +40,25 @@ class Github(object):
                 query($organization:String!, $project_num:Int!) {
                     organization(login: $organization) {
                         projectNext(number: $project_num) {
-                            items(first:60) {
+                            items(last:100) {
                             nodes {
-                                fieldValues(first:60) {
-                                nodes {
-                                    value
-                                    projectField {
-                                        name
+                                fieldValues(first:100) {
+                                    nodes {
+                                        value
+                                        projectField {
+                                            name
+                                        }
                                     }
-                                }
                                 }
                                 content {
                                 ...on Issue {
                                     number
                                     title
                                     repository {
-                                    owner {
-                                        login
-                                    }
-                                    name
+                                        owner {
+                                            login
+                                        }
+                                        name
                                     }
                                 }
                                 }

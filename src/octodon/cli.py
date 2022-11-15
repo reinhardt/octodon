@@ -189,12 +189,12 @@ class Octodon(Cmd):
             except ImportError:
                 return None
 
-            if self.config.has_option("harvest", "password_command"):
-                cmd = self.config.get("harvest", "password_command")
-                password = (
+            if self.config.has_option("harvest", "token_command"):
+                cmd = self.config.get("harvest", "token_command")
+                token = (
                     subprocess.check_output(cmd.split(" ")).strip().decode("utf-8")
                 )
-                self.config.set("harvest", "pass", password)
+                self.config.set("harvest", "personal_token", token)
 
             if self.config.has_option("main", "project-mapping"):
                 project_mapping = self.config.get("main", "project-mapping")
@@ -216,8 +216,8 @@ class Octodon(Cmd):
 
             self._harvest = harvest = Harvest(
                 self.config.get("harvest", "url"),
-                self.config.get("harvest", "user"),
-                self.config.get("harvest", "pass"),
+                self.config.get("harvest", "account_id"),
+                self.config.get("harvest", "personal_token"),
                 project_mapping=project_mapping,
                 task_mapping=task_mapping,
                 default_task=self.config.get("main", "default-task"),

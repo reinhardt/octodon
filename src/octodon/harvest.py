@@ -13,13 +13,15 @@ class Harvest(object):
     def __init__(
         self,
         url,
-        user,
-        password,
+        account_id,
+        personal_token,
         project_mapping={},
         task_mapping={},
         default_task=None,
     ):
-        self.harvest = self.connection_factory(url, user, password)
+        self.harvest = self.connection_factory(
+            url, account_id=account_id, personal_token=personal_token
+        )
         self.project_mapping = project_mapping
         self.task_mapping = task_mapping
         self._projects = []
@@ -34,41 +36,47 @@ class Harvest(object):
 
     def book_time(self, bookings):
         projects_lookup = dict(
-            [(project[u"code"], project) for project in self.projects]
+            [(project["code"], project) for project in self.projects]
         )
         for entry in bookings:
             project = projects_lookup[entry["project"]]
-            project_id = project and project[u"id"] or -1
-            tasks_lookup = dict([(task[u"name"], task) for task in project[u"tasks"]])
+            project_id = project and project["id"] or -1
+            tasks_lookup = dict([(task["name"], task) for task in self.tasks])
             task = tasks_lookup.get(entry["activity"])
-            task_id = task and task[u"id"] or -1
+            task_id = task and task["id"] or -1
 
             issue_desc = ""
             if entry["issue_id"]:
                 issue_desc = "[#{0}] {1}: ".format(
                     str(entry["issue_id"]), entry["issue_title"]
                 )
-            self.harvest.add(
+            res = self.harvest._post(
+                "/time_entries",
                 {
                     "notes": "{0}{1}".format(issue_desc, entry["comments"]),
                     "project_id": project_id,
                     "hours": str(entry["time"] / 60.0),
                     "task_id": task_id,
-                    "spent_at": entry["spent_on"],
-                }
+                    "spent_date": entry["spent_on"],
+                },
             )
+            if "message" in res:
+                print(
+                    "{} ({}, {})".format(res["message"], project["name"], task["name"])
+                )
+
             self.remember_project(entry["issue_id"], project["code"])
 
     @property
     def activities(self):
-        return [act["task"] for act in self.harvest.tasks()]
+        return self.tasks
 
     @property
     def projects(self):
         if not self._projects:
             harvest_data = {}
             try:
-                harvest_data = self.harvest.get_day()
+                harvest_data = self.harvest.projects()
                 self._projects = harvest_data["projects"]
             except Exception as e:
                 print(
@@ -77,10 +85,29 @@ class Harvest(object):
                     ),
                     file=sys.stderr,
                 )
-                if u"message" in harvest_data:
-                    print(harvest_data[u"message"], file=sys.stderr)
+                if "message" in harvest_data:
+                    print(harvest_data["message"], file=sys.stderr)
                 self._projects = []
         return self._projects
+
+    @property
+    def tasks(self):
+        if not hasattr(self, "_tasks"):
+            harvest_data = {}
+            try:
+                harvest_data = self.harvest.tasks()
+                self._tasks = harvest_data["tasks"]
+            except Exception as e:
+                print(
+                    "Could not get harvest tasks: {0}: {1}".format(
+                        e.__class__.__name__, e
+                    ),
+                    file=sys.stderr,
+                )
+                if "message" in harvest_data:
+                    print(harvest_data["message"], file=sys.stderr)
+                self._tasks = []
+        return self._tasks
 
     def _load_project_history(self):
         if not os.path.exists(self.project_history_file):

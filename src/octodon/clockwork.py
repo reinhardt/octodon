@@ -154,3 +154,11 @@ class ClockWorkTimeLog(object):
         if current_task and current_task["description"]:
             facts.append(self.finalize_task(current_task))
         return facts
+
+    def get_time_balance(self):
+        daily_time = 7.5
+        timesheet = self.get_raw_log()
+        facts = self.get_facts(timesheet)
+        num_days = len(set([fact["spent_on"].date() for fact in facts]))
+        total_hours = sum((fact["time"] for fact in facts))
+        return total_hours / 60.0 - num_days * daily_time

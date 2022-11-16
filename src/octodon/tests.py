@@ -2,6 +2,7 @@ from datetime import date
 from datetime import datetime
 from octodon.clockwork import ClockWorkTimeLog
 from octodon.exceptions import NotFound
+from octodon.github import Github
 from octodon.harvest import Harvest
 from octodon.jira import Jira
 from octodon.redmine import Redmine
@@ -33,18 +34,29 @@ class MockHarvestConnection(object):
     def add(self, entry):
         self.target.entries.append(entry)
 
+    def _post(self, url, data, *args, **kwargs):
+        self.target.entries.append(data)
+        return {}
+
 
 class MockHarvest(Harvest):
     def __init__(self, *args, **kwargs):
         self.entries = []
         super(MockHarvest, self).__init__(None, None, None, *args, **kwargs)
 
-    def connection_factory(self, *args):
+    def connection_factory(self, *args, **kwargs):
         return MockHarvestConnection(self)
 
     @property
     def projects(self):
         return self.get_day()["projects"]
+
+    @property
+    def tasks(self):
+        return [
+            {"billable": False, "id": 3982276, "name": "Admin/Orga"},
+            {"billable": True, "id": 3982288, "name": "Development"},
+        ]
 
     def get_day(self):
         return {
@@ -731,6 +743,28 @@ class TestClockWork(unittest.TestCase):
                 }
             ],
         )
+
+    def test_get_time_balance_positive(self):
+        timesheet = """2019-11-14:
+0735 Improve usability CGUI-417
+1115 Manual tests CGUI-422
+1335 Improve usability CGUI-417
+1605
+"""
+        clockwork = ClockWorkTimeLog(ticket_patterns=[Github.ticket_pattern])
+        clockwork.get_raw_log = lambda: iter(timesheet.split("\n"))
+        self.assertEqual(clockwork.get_time_balance(), 1)
+
+    def test_get_time_balance_negative(self):
+        timesheet = """2019-11-14:
+0735 Improve usability CGUI-417
+0815 Manual tests CGUI-422
+1335 Improve usability CGUI-417
+1405
+"""
+        clockwork = ClockWorkTimeLog(ticket_patterns=[Github.ticket_pattern])
+        clockwork.get_raw_log = lambda: iter(timesheet.split("\n"))
+        self.assertEqual(clockwork.get_time_balance(), -1)
 
 
 if __name__ == "__main__":

@@ -14,7 +14,6 @@ from octodon.utils import read_from_file
 from octodon.utils import write_to_file
 from octodon.version_control import GitLog
 from octodon.version_control import SvnLog
-from octodon.version_control import VCSLog
 from six.moves.configparser import ConfigParser
 
 import argparse
@@ -322,6 +321,9 @@ class Octodon(Cmd):
     def do_total(self, *args):
         bookings = self.time_log.get_timeinfo(date=self.spent_on)
         print(format_spent_time(get_time_sum(bookings)))
+
+    def do_balance(self, *args):
+        print(self.time_log.get_time_balance())
 
     def do_list(self, arg):
         """Print the current bookings or save them to a file.

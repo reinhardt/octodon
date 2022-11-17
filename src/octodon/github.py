@@ -1,7 +1,12 @@
 from github3api import GitHubAPI
+from github3api.githubapi import GraphqlError
 from octodon.issue import Issue
 
+import logging
 import re
+
+
+logger = logging.getLogger(__name__)
 
 
 class GithubIssue(Issue):
@@ -37,17 +42,14 @@ class Github(object):
     def issues(self):
         if not hasattr(self, "_issues"):
             query = """
-                query($organization:String!, $project_num:Int!) {
+                query($organization:String!, $project_num:Int!, $items_cursor:String!) {
                     organization(login: $organization) {
-                        projectNext(number: $project_num) {
-                            items(last:100) {
+                        projectV2(number: $project_num) {
+                            items(first:100, after: $items_cursor) {
                             nodes {
-                                fieldValues(first:100) {
-                                    nodes {
-                                        value
-                                        projectField {
-                                            name
-                                        }
+                                fieldValueByName(name: "Contracts") {
+                                    ...on ProjectV2ItemFieldTextValue {
+                                        text
                                     }
                                 }
                                 content {
@@ -63,40 +65,54 @@ class Github(object):
                                 }
                                 }
                             }
+                            pageInfo {
+                              endCursor
+                              hasNextPage
+                            }
                             }
                         }
                     }
                 }
             """
-            result = self._github.graphql(
-                query,
-                {"organization": self.organization, "project_num": self.project_num},
-            )
-            nodes = result["data"]["organization"]["projectNext"]["items"]["nodes"]
+            items_cursor = ""
+            hasNextPage = True
             self._issues = {}
-            for node in nodes:
-                contract = next(
-                    (
-                        field["value"]
-                        for field in node["fieldValues"]["nodes"]
-                        if field["projectField"]["name"] == "Contracts"
-                    ),
-                    None,
-                )
-                if not node.get("content"):
-                    # probably a draft card
-                    continue
-                repo = node["content"].get("repository")
-                if not repo:
-                    continue
-                owner = repo["owner"]["login"]
-                name = repo["name"]
-                number = node["content"]["number"]
-                title = node["content"]["title"]
-                self._issues.setdefault(owner, {}).setdefault(name, {})[number] = {
-                    "contract": contract,
-                    "title": title,
-                }
+            while hasNextPage:
+                try:
+                    result = self._github.graphql(
+                        query,
+                        {
+                            "organization": self.organization,
+                            "project_num": self.project_num,
+                            "items_cursor": items_cursor,
+                        },
+                    )
+                except GraphqlError as e:
+                    logger.error(str(e))
+                    return self._issues
+                nodes = result["data"]["organization"]["projectV2"]["items"]["nodes"]
+                for node in nodes:
+                    contract = (node.get("fieldValueByName") or {}).get("text")
+                    if not node.get("content"):
+                        # probably a draft card
+                        continue
+                    repo = node["content"].get("repository")
+                    if not repo:
+                        continue
+                    owner = repo["owner"]["login"]
+                    name = repo["name"]
+                    number = node["content"]["number"]
+                    title = node["content"]["title"]
+                    self._issues.setdefault(owner, {}).setdefault(name, {})[number] = {
+                        "contract": contract,
+                        "title": title,
+                    }
+                hasNextPage = result["data"]["organization"]["projectV2"]["items"][
+                    "pageInfo"
+                ]["hasNextPage"]
+                items_cursor = result["data"]["organization"]["projectV2"]["items"][
+                    "pageInfo"
+                ]["endCursor"]
         return self._issues
 
     def get_project_id(self, organization, project_num):

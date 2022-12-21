@@ -104,7 +104,18 @@ def OctodonClock():
     line = vim.current.line
     current_line_no = vim.current.window.cursor[0] - 1
     previous_line_no = current_line_no - 1
+    next_line_no = current_line_no + 1
 
+    # when on a previous line, start that task
+    time_pattern = "^[0-9]{4} "
+    if re.search(time_pattern, line) and current_line_no < len(vim.current.buffer) - 1:
+        current_line_no = len(vim.current.buffer)
+        buffer = vim.current.buffer.range(0, current_line_no)
+        buffer.append(re.sub(time_pattern, "", line))
+        vim.current.window.cursor = (current_line_no + 1, vim.current.window.cursor[1])
+        line = vim.current.line
+
+    # when line is empty, continue last task
     previous_task = ""
     if not line.strip() and previous_line_no > 0:
         previous_line = vim.current.buffer[previous_line_no].strip()
@@ -114,10 +125,14 @@ def OctodonClock():
             previous_task = re.sub("^[0-9]{4} ", "", previous_line)
             line = vim.current.line = previous_task
 
-    if previous_task or not re.match("^[0-9]{4} .*", line):
+    # add current time if none given
+    if previous_task or not re.search(time_pattern, line):
         now = datetime.now().strftime("%H%M")
         line = f"{now} {line}"
 
+    line = re.sub("https://github.com/([^/]*)/([^/]*)/issues/([0-9]*)", "\\1/\\2#\\3", line)
+
+    # expand ticket reference
     from octodon.github import Github
     ticket_match = Github.ticket_pattern.search(line)
     if ticket_match:
@@ -141,6 +156,7 @@ def OctodonClock():
                     line = line.replace(issue_id, issue_text)
     vim.current.line = line
 
+    # when previous line is empty, start a new day
     if previous_line_no < 0 or not vim.current.buffer[previous_line_no].strip():
         date_line = "{}:".format(datetime.now().strftime("%Y-%m-%d"))
         buffer = vim.current.buffer.range(0, current_line_no)

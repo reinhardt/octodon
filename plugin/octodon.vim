@@ -134,6 +134,7 @@ def OctodonClock():
 
     # expand ticket reference
     from octodon.github import Github
+    from github3api import GitHubAPI
     ticket_match = Github.ticket_pattern.search(line)
     if ticket_match:
         config = get_config()
@@ -142,15 +143,16 @@ def OctodonClock():
                 cmd = config.get("github", "token_command")
                 token = subprocess.check_output(cmd.split(" ")).strip().decode("utf-8")
                 config.set("github", "token", token)
-            github = Github(
-                config.get("github", "token"),
-                config.get("github", "organization"),
-                int(config.get("github", "project_num")),
-            )
-            issue_id = ticket_match[1]
-            issue = github.get_issue(issue_id)
+            githubapi = GitHubAPI(bearer_token=config.get("github", "token"))
+
+            org, repo, number = ticket_match.groups()[1:4]
+            try:
+                issue = githubapi.get(f"/repos/{org}/{repo}/issues/{number}")
+            except:
+                issue = None
             if issue:
-                summary = issue.get_title()
+                issue_id = ticket_match[1]
+                summary = issue.get("title", "")
                 issue_text = f"{summary} {issue_id}"
                 if issue_text not in line:
                     line = line.replace(issue_id, issue_text)
